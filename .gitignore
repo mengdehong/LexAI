@@ -1,0 +1,52 @@
+# ============== General ==============
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ============== Python ==============
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments & Dependencies
+.env
+.venv
+venv
+ENV
+env
+pip-log.txt
+
+# Distribution / Packaging
+build/
+dist/
+wheels/
+*.egg-info/
+.eggs/
+
+# Testing & Coverage
+.pytest_cache/
+.mypy_cache/
+.coverage
+.cache
+htmlcov/
+.tox/
+
+# ============== Rust ==============
+/target/
+*.rlib
+.cargo/config.toml
+
+# ============== IDE / Editor ==============
+.idea/
+.vscode/
+*.sublime-*
+
+# ============== Secrets ==============
+*.pem
+*.key
+credentials.json
+secrets.yml
+
+# ============== Python-Rust Bridge (PyO3/Maturin) ==============
+*.pyd
