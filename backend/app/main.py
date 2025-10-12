@@ -1,6 +1,9 @@
 """FastAPI application entrypoint for LexAI backend."""
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
+
+from .config import Settings, get_settings
+from .routers.documents import router as documents_router
 
 try:
     from rust_core import hello_from_rust
@@ -11,12 +14,13 @@ except ImportError as exc:  # pragma: no cover - exercised during runtime
 
 
 app = FastAPI(title="LexAI Backend", version="0.1.0")
+app.include_router(documents_router)
 
 
 @app.get("/")
-async def read_root() -> dict[str, str]:
+async def read_root(settings: Settings = Depends(get_settings)) -> dict[str, str]:
     """Health check endpoint."""
-    return {"status": "ok"}
+    return {"status": "ok", "qdrant_host": settings.qdrant_host}
 
 
 @app.get("/test_rust")
