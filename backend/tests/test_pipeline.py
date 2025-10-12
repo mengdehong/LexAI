@@ -102,7 +102,7 @@ def stub_qdrant(monkeypatch: pytest.MonkeyPatch) -> None:
     class _FakeQdrantClient:
         _collections: dict[str, dict[str, list[models.PointStruct]]] = {}
 
-        def __init__(self, url: str):  # noqa: ARG002
+        def __init__(self, url: str | None = None, **_: object):  # noqa: ARG002
             self.collections = _FakeQdrantClient._collections
 
         def get_collection(self, collection_name: str) -> None:
