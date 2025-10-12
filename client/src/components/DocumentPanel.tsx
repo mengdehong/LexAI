@@ -34,7 +34,7 @@ export function DocumentPanel() {
         fileText = await readFileContent(file);
       } catch (previewErr) {
         previewFallback = true;
-        fileText = "[Preview unavailable for this file type. Preview is limited to plain-text formats.]";
+        fileText = "[Preview not available for this file type. Preview is limited to plain-text formats.]";
       }
 
       try {
@@ -60,13 +60,11 @@ export function DocumentPanel() {
 
         setDocument({ id: payload.document_id, text: fileText, name: file.name });
         setUploadStatus("success");
-        if (previewFallback) {
-          setMessage(
-            "Upload completed. Preview unavailable for this file type; use extracted terms instead.",
-          );
-        } else {
-          setMessage(payload.message ?? "Upload completed");
-        }
+        setMessage(
+          previewFallback
+            ? "Upload completed. Preview not available for this file type; use extracted terms instead."
+            : payload.message ?? "Upload completed",
+        );
         event.target.value = "";
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
@@ -95,12 +93,7 @@ export function DocumentPanel() {
           }
         >
           <span>Select file</span>
-          <input
-            type="file"
-            onChange={handleSelection}
-            accept=".txt,.md,.pdf,.docx,.html,.rtf"
-            disabled={uploadStatus === "uploading"}
-          />
+          <input type="file" onChange={handleSelection} disabled={uploadStatus === "uploading"} />
         </label>
       </header>
       {uploadStatus === "uploading" && <p className="panel__status">Uploading…</p>}

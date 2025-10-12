@@ -8,6 +8,7 @@ use sqlx::{
 };
 use tauri::{Manager, State};
 
+
 #[derive(Clone)]
 struct AppState {
     pool: SqlitePool,
@@ -136,6 +137,7 @@ async fn init_database(db_path: &Path) -> Result<SqlitePool, sqlx::Error> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
         .setup(|app| {
             let data_dir = app
                 .path()

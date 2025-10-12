@@ -1,5 +1,13 @@
+@font-face {
+  font-family: "LexAI Noto Sans SC";
+  src: url("./assets/fonts/NotoSansSC-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
-  font-family: "Inter", "Segoe UI", Helvetica, Arial, sans-serif;
+  font-family: "LexAI Noto Sans SC", "Noto Sans SC", "Inter", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", "Segoe UI", Helvetica, Arial, sans-serif;
   font-size: 16px;
   line-height: 1.5;
   font-weight: 400;
@@ -15,6 +23,7 @@
 body {
   margin: 0;
   min-height: 100vh;
+  font-family: inherit;
   background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
 }
 
@@ -324,6 +333,162 @@ button:disabled {
 
 .global-view {
   height: 100%;
+}
+
+.settings-grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.provider-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.provider-form__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.provider-form__row label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.provider-form__row input,
+.provider-form__row select,
+.provider-form__api-key input,
+.mapping-entry__controls input,
+.mapping-entry__controls select,
+.preferences-form select {
+  border-radius: 8px;
+  border: 1px solid #cbd5f5;
+  padding: 0.6rem 0.75rem;
+  background: #f8fafc;
+  font-size: 0.95rem;
+}
+
+.provider-form__api-key {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.provider-form__actions {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.provider-form__reset {
+  background: #e2e8f0;
+  color: #1f2937;
+}
+
+.provider-entry {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  align-items: center;
+}
+
+.provider-entry__actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.provider-entry__actions button,
+.provider-form__actions button,
+.mapping-entry__controls button,
+.preferences-form button {
+  border: none;
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  background: #4f46e5;
+  color: #f8fafc;
+  font-size: 0.9rem;
+  transition: background 0.2s ease;
+}
+
+.provider-entry__actions button:hover,
+.provider-form__actions button:hover,
+.mapping-entry__controls button:hover,
+.preferences-form button:hover {
+  background: #4338ca;
+}
+
+.provider-entry__actions button:nth-of-type(2) {
+  background: #ef4444;
+}
+
+.provider-entry__actions button:nth-of-type(2):hover {
+  background: #dc2626;
+}
+
+.provider-form__actions button:disabled,
+.provider-entry__actions button:disabled,
+.mapping-entry__controls button:disabled,
+.preferences-form button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.mapping-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.mapping-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 12px;
+  background: #eef2ff;
+}
+
+.mapping-entry__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.mapping-entry__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.mapping-entry__controls label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
+}
+
+.preferences-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.preferences-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.9rem;
 }
 
 @media (max-width: 768px) {

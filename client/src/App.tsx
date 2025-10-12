@@ -5,6 +5,7 @@ import { ReadingPanel } from "./components/ReadingPanel";
 import { TermsPanel } from "./components/TermsPanel";
 import { ContextPanel } from "./components/ContextPanel";
 import { GlobalTermbaseView } from "./components/GlobalTermbaseView";
+import { SettingsView } from "./components/SettingsView";
 import { useAppState } from "./state/AppState";
 import "./App.css";
 
@@ -30,7 +31,7 @@ function Workspace() {
 function App() {
   const [status, setStatus] = useState<string>("Connecting...");
   const [error, setError] = useState<string | null>(null);
-  const [activeView, setActiveView] = useState<"workspace" | "global">("workspace");
+  const [activeView, setActiveView] = useState<"workspace" | "global" | "settings">("workspace");
   const { documentId } = useAppState();
 
   useEffect(() => {
@@ -105,10 +106,19 @@ function App() {
           >
             Global Termbase
           </button>
+          <button
+            type="button"
+            className={activeView === "settings" ? "topbar__button active" : "topbar__button"}
+            onClick={() => setActiveView("settings")}
+          >
+            Settings
+          </button>
         </nav>
       </header>
       <section className="app-shell__content">
-        {activeView === "workspace" ? <Workspace /> : <GlobalTermbaseView />}
+        {activeView === "workspace" && <Workspace />}
+        {activeView === "global" && <GlobalTermbaseView />}
+        {activeView === "settings" && <SettingsView />}
       </section>
       <footer className="status-bar">
         <span>{documentId ? `Active document: ${documentId}` : "No document selected"}</span>
