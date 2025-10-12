@@ -48,6 +48,7 @@ htmlcov/
 *.key
 credentials.json
 secrets.yml
+demo.md
 
 # ============== Python-Rust Bridge (PyO3/Maturin) ==============
 *.pyd

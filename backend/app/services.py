@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
+from pathlib import Path
 from functools import lru_cache
 from importlib import import_module
 from typing import TYPE_CHECKING, Any, List
@@ -41,10 +43,22 @@ def get_embedder(model_name: str) -> "_SentenceTransformer | Any":
     return SentenceTransformer(model_name)
 
 
+def create_qdrant_client(destination: str) -> QdrantClient:
+    if destination.startswith("http://") or destination.startswith("https://"):
+        return QdrantClient(url=destination)
+
+    if destination == ":memory:":
+        return QdrantClient(location=destination)
+
+    local_path = Path(destination)
+    local_path.mkdir(parents=True, exist_ok=True)
+    return QdrantClient(path=str(local_path))
+
+
 def ensure_collection(client: QdrantClient, vector_size: int) -> None:
     try:
         client.get_collection(COLLECTION_NAME)
-    except UnexpectedResponse:
+    except (UnexpectedResponse, ValueError):
         client.create_collection(
             collection_name=COLLECTION_NAME,
             vectors_config=models.VectorParams(
@@ -84,12 +98,12 @@ async def process_and_embed_document(file_path: str, document_id: str) -> None:
     if not vectors:
         raise ValueError("No embeddings generated for document chunks")
 
-    client = QdrantClient(url=settings.qdrant_host)
+    client = create_qdrant_client(settings.qdrant_host)
     await asyncio.to_thread(ensure_collection, client, len(vectors[0]))
 
     points = [
         models.PointStruct(
-            id=f"{document_id}-{idx}",
+            id=str(uuid.uuid4()),
             vector=vector,
             payload={"document_id": document_id, "chunk_text": chunk_text},
         )

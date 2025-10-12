@@ -1,19 +1,42 @@
 import { useEffect, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/tauri";
+import { DocumentPanel } from "./components/DocumentPanel";
+import { ReadingPanel } from "./components/ReadingPanel";
+import { TermsPanel } from "./components/TermsPanel";
+import { ContextPanel } from "./components/ContextPanel";
+import { GlobalTermbaseView } from "./components/GlobalTermbaseView";
+import { useAppState } from "./state/AppState";
 import "./App.css";
 
 type BackendStatusPayload = {
   status: string;
 };
 
+function Workspace() {
+  return (
+    <div className="workspace">
+      <div className="workspace__column">
+        <DocumentPanel />
+        <TermsPanel />
+      </div>
+      <div className="workspace__column">
+        <ReadingPanel />
+        <ContextPanel />
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [status, setStatus] = useState<string>("Connecting...");
   const [error, setError] = useState<string | null>(null);
+  const [activeView, setActiveView] = useState<"workspace" | "global">("workspace");
+  const { documentId } = useAppState();
 
   useEffect(() => {
     let active = true;
 
-    const fetchStatus = async () => {
+    const fetchStatus = async (): Promise<boolean> => {
       try {
         const raw = (await invoke<string>("fetch_backend_status")) ?? "";
         const payload: BackendStatusPayload = JSON.parse(raw);
@@ -22,16 +45,37 @@ function App() {
           setStatus(payload.status ?? "unknown");
           setError(null);
         }
+        return true;
       } catch (err) {
         if (active) {
           const message = err instanceof Error ? err.message : String(err);
-          setError(message);
+          setError(message || "Unable to reach backend");
           setStatus("unavailable");
         }
+        return false;
       }
     };
 
-    fetchStatus();
+    const scheduleRetry = () => {
+      if (!active) {
+        return;
+      }
+      setTimeout(async () => {
+        if (!active) {
+          return;
+        }
+        const ok = await fetchStatus();
+        if (!ok) {
+          scheduleRetry();
+        }
+      }, 3000);
+    };
+
+    fetchStatus().then((ok) => {
+      if (!ok) {
+        scheduleRetry();
+      }
+    });
 
     return () => {
       active = false;
@@ -39,15 +83,36 @@ function App() {
   }, []);
 
   return (
-    <main className="container">
-      <h1>LexAI Desktop Shell</h1>
-      <p>Backend status: {status}</p>
-      {error && <p className="error">Last error: {error}</p>}
-      <p className="hint">
-        Launch the FastAPI server with
-        <code> poetry run uvicorn app.main:app --reload </code>
-        to see a successful status response.
-      </p>
+    <main className="app-shell">
+      <header className="topbar">
+        <div>
+          <h1>LexAI Workbench</h1>
+          <p className="topbar__status">Backend status: {status}</p>
+          {error && <p className="topbar__error">{error}</p>}
+        </div>
+        <nav className="topbar__nav">
+          <button
+            type="button"
+            className={activeView === "workspace" ? "topbar__button active" : "topbar__button"}
+            onClick={() => setActiveView("workspace")}
+          >
+            Workspace
+          </button>
+          <button
+            type="button"
+            className={activeView === "global" ? "topbar__button active" : "topbar__button"}
+            onClick={() => setActiveView("global")}
+          >
+            Global Termbase
+          </button>
+        </nav>
+      </header>
+      <section className="app-shell__content">
+        {activeView === "workspace" ? <Workspace /> : <GlobalTermbaseView />}
+      </section>
+      <footer className="status-bar">
+        <span>{documentId ? `Active document: ${documentId}` : "No document selected"}</span>
+      </footer>
     </main>
   );
 }
