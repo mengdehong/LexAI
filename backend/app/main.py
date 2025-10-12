@@ -1,6 +1,7 @@
 """FastAPI application entrypoint for LexAI backend."""
 
 from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 
 from .config import Settings, get_settings
 from .routers.documents import router as documents_router
@@ -14,6 +15,20 @@ except ImportError as exc:  # pragma: no cover - exercised during runtime
 
 
 app = FastAPI(title="LexAI Backend", version="0.1.0")
+
+allowed_origins = {
+    "http://localhost:1420",
+    "http://127.0.0.1:1420",
+    "tauri://localhost",
+}
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=list(allowed_origins),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.include_router(documents_router)
 
 

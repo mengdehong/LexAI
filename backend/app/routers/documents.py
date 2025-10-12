@@ -9,7 +9,12 @@ from qdrant_client import QdrantClient, models
 
 from ..config import Settings, get_settings
 from ..schemas import DocumentUploadResponse, SearchResponse, SearchResult
-from ..services import COLLECTION_NAME, get_embedder, process_and_embed_document
+from ..services import (
+    COLLECTION_NAME,
+    create_qdrant_client,
+    get_embedder,
+    process_and_embed_document,
+)
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -65,7 +70,7 @@ async def search_document(
         convert_to_numpy=True,
     )
 
-    client = QdrantClient(url=settings.qdrant_host)
+    client = create_qdrant_client(settings.qdrant_host)
     query_filter = models.Filter(
         must=[
             models.FieldCondition(
