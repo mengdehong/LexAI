@@ -8,6 +8,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.db
 
 # Environments & Dependencies
 .env
@@ -50,3 +51,4 @@ secrets.yml
 
 # ============== Python-Rust Bridge (PyO3/Maturin) ==============
 *.pyd
+backend/rust_core/target/
