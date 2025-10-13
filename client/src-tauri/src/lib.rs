@@ -7,7 +7,8 @@ use sqlx::{
     ConnectOptions, Row, SqlitePool,
 };
 use tauri::{Manager, State};
-
+use tauri_plugin_dialog::{DialogExt, FilePath};
+use tokio::{fs as tokio_fs, sync::oneshot};
 
 #[derive(Clone)]
 struct AppState {
@@ -31,6 +32,21 @@ struct SearchResultPayload {
 #[derive(Debug, Deserialize)]
 struct SearchResponsePayload {
     results: Vec<SearchResultPayload>,
+}
+
+fn escape_csv_cell(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len() + 2);
+    escaped.push('"');
+    for ch in value.chars() {
+        if ch == '"' {
+            escaped.push('"');
+            escaped.push('"');
+        } else {
+            escaped.push(ch);
+        }
+    }
+    escaped.push('"');
+    escaped
 }
 
 #[tauri::command]
@@ -108,10 +124,112 @@ async fn get_all_terms(state: State<'_, AppState>) -> Result<Vec<Term>, String> 
 }
 
 #[tauri::command]
+async fn find_term_by_name(
+    term: String,
+    state: State<'_, AppState>,
+) -> Result<Option<Term>, String> {
+    let record = sqlx::query(
+        "SELECT id, term, COALESCE(definition, '') AS definition FROM terms WHERE lower(term) = lower(?) LIMIT 1",
+    )
+    .bind(&term)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|err| err.to_string())?;
+
+    let result = record.map(|row| Term {
+        id: row.get("id"),
+        term: row.get("term"),
+        definition: row.get("definition"),
+    });
+
+    Ok(result)
+}
+
+#[tauri::command]
 async fn delete_term(id: i64, state: State<'_, AppState>) -> Result<(), String> {
     sqlx::query("DELETE FROM terms WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn update_term(
+    id: i64,
+    term: String,
+    definition: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    sqlx::query("UPDATE terms SET term = ?, definition = ? WHERE id = ?")
+        .bind(term)
+        .bind(definition)
+        .bind(id)
+        .execute(&state.pool)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+async fn export_terms_csv(
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let records = sqlx::query(
+        "SELECT term, COALESCE(definition, '') AS definition FROM terms ORDER BY lower(term) ASC",
+    )
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|err| err.to_string())?;
+
+    if records.is_empty() {
+        return Err("No terms available to export.".to_string());
+    }
+
+    let mut csv = String::from("Term,Definition\n");
+    for row in records {
+        let term: String = row.get("term");
+        let definition: String = row.get("definition");
+        let line = format!(
+            "{},{}\n",
+            escape_csv_cell(&term),
+            escape_csv_cell(&definition)
+        );
+        csv.push_str(&line);
+    }
+
+    let (sender, receiver) = oneshot::channel::<Option<FilePath>>();
+
+    let mut builder = app_handle
+        .dialog()
+        .file()
+        .set_title("Export terminology")
+        .set_file_name("lexai_terms.csv")
+        .add_filter("CSV", &["csv"]);
+
+    if let Some(window) = app_handle.get_webview_window("main") {
+        builder = builder.set_parent(&window);
+    }
+
+    builder.save_file(move |path| {
+        let _ = sender.send(path.map(FilePath::simplified));
+    });
+
+    let selected = receiver
+        .await
+        .map_err(|_| "Failed to capture selected export path.".to_string())?;
+
+    let Some(file_path) = selected else {
+        return Err("Export cancelled.".to_string());
+    };
+
+    let path = file_path.into_path().map_err(|err| err.to_string())?;
+
+    tokio_fs::write(path, csv)
         .await
         .map_err(|err| err.to_string())?;
 
@@ -136,6 +254,7 @@ async fn init_database(db_path: &Path) -> Result<SqlitePool, sqlx::Error> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .setup(|app| {
@@ -158,7 +277,10 @@ pub fn run() {
             search_term_contexts,
             add_term,
             get_all_terms,
-            delete_term
+            find_term_by_name,
+            delete_term,
+            update_term,
+            export_terms_csv
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
