@@ -1,9 +1,14 @@
 import type { TermDefinition } from "../state/AppState";
-import { buildOnboardingPrompt, buildTermExtractionPrompt, type OnboardingProfile } from "./promptBuilder";
+import {
+  buildExplanationPrompt,
+  buildOnboardingPrompt,
+  buildTermExtractionPrompt,
+  type OnboardingProfile,
+} from "./promptBuilder";
 import type { DefinitionLanguage, LexAIConfig, ProviderConfig } from "./configStore";
 import { loadConfig } from "./configStore";
 
-type SupportedOperation = "termExtraction" | "onboarding";
+type SupportedOperation = "termExtraction" | "onboarding" | "explanation";
 
 function normalizeBaseUrl(baseUrl: string | undefined, fallback: string): string {
   if (!baseUrl || baseUrl.trim().length === 0) {
@@ -65,6 +70,7 @@ async function callOpenAI(
   model: string,
   systemPrompt: string,
   prompt: string,
+  expectJson = true,
 ): Promise<string> {
   const baseUrl = normalizeBaseUrl(provider.baseUrl, "https://api.openai.com/v1");
   const endpoint = `${baseUrl}/chat/completions`;
@@ -108,7 +114,7 @@ async function callOpenAI(
     throw new Error("OpenAI response missing content");
   }
 
-  return extractJsonPayload(content);
+  return expectJson ? extractJsonPayload(content) : content.trim();
 }
 
 async function callGemini(
@@ -116,6 +122,7 @@ async function callGemini(
   model: string,
   systemPrompt: string,
   prompt: string,
+  expectJson = true,
 ): Promise<string> {
   const apiKey = resolveApiKey(provider);
   if (!apiKey) {
@@ -168,12 +175,13 @@ async function callGemini(
     throw new Error("Gemini response missing content");
   }
 
-  return extractJsonPayload(text);
+  return expectJson ? extractJsonPayload(text) : text.trim();
 }
 
 const OPERATION_LABELS: Record<SupportedOperation, string> = {
   termExtraction: "Document Term Extraction",
   onboarding: "Conversational Onboarding",
+  explanation: "AI Assisted Definitions",
 };
 
 function buildSystemPrompt(operation: SupportedOperation, language: DefinitionLanguage): string {
@@ -185,6 +193,8 @@ function buildSystemPrompt(operation: SupportedOperation, language: DefinitionLa
   switch (operation) {
     case "onboarding":
       return `You are LexAI's onboarding mentor. Use the provided learner context to curate a starter glossary tailored to their needs. Always respond with a minified JSON array. ${languageNote}`;
+    case "explanation":
+      return `You are a domain tutor helping learners understand complex passages. Provide short, high-impact explanations with optional examples. ${languageNote}`;
     case "termExtraction":
     default:
       return `You are a multilingual terminology extraction assistant for LexAI. Respond only with minified JSON arrays of objects with 'term' and 'definition' keys. ${languageNote}`;
@@ -207,11 +217,14 @@ function ensureOperation(config: LexAIConfig, operation: SupportedOperation) {
 }
 
 function parseTermDefinitions(jsonString: string): TermDefinition[] {
-  const parsed = JSON.parse(jsonString) as Array<{ term?: string; definition?: string }>;
+  const parsed = JSON.parse(jsonString) as Array<
+    { term?: string; definition?: string; definition_cn?: string; definitionCn?: string }
+  >;
   return parsed
     .map((entry) => ({
       term: String(entry.term ?? "").trim(),
       definition: String(entry.definition ?? "").trim(),
+      definition_cn: (entry.definition_cn ?? entry.definitionCn ?? "").trim() || undefined,
     }))
     .filter((entry) => entry.term.length > 0 && entry.definition.length > 0);
 }
@@ -243,6 +256,33 @@ async function runTermOperation(
   return terms;
 }
 
+async function runTextOperation(
+  config: LexAIConfig,
+  operation: SupportedOperation,
+  prompt: string,
+): Promise<string> {
+  const { provider, model } = ensureOperation(config, operation);
+  const systemPrompt = buildSystemPrompt(operation, config.preferences.definitionLanguage);
+
+  let response: string;
+  switch (provider.vendor) {
+    case "openai":
+      response = await callOpenAI(provider, model, systemPrompt, prompt, false);
+      break;
+    case "gemini":
+      response = await callGemini(provider, model, systemPrompt, prompt, false);
+      break;
+    default:
+      throw new Error(`Unsupported provider vendor: ${provider.vendor}`);
+  }
+
+  const cleaned = response.trim();
+  if (!cleaned) {
+    throw new Error("The language model returned an empty response.");
+  }
+  return cleaned;
+}
+
 export async function extractDocumentTerms(documentText: string): Promise<TermDefinition[]> {
   const config = await loadConfig();
   if (!documentText || documentText.trim().length === 0) {
@@ -265,4 +305,19 @@ export async function generateOnboardingTerms(profile: OnboardingProfile): Promi
 
   const prompt = buildOnboardingPrompt(profile, config.preferences.definitionLanguage);
   return runTermOperation(config, "onboarding", prompt);
+}
+
+export async function explainSelection(snippet: string): Promise<string> {
+  const config = await loadConfig();
+  const trimmed = snippet.trim();
+  if (!trimmed) {
+    throw new Error("Select some text first.");
+  }
+
+  if (config.providers.length === 0) {
+    throw new Error("No AI providers configured. Add one in Settings before requesting explanations.");
+  }
+
+  const prompt = buildExplanationPrompt(trimmed, config.preferences.definitionLanguage);
+  return runTextOperation(config, "explanation", prompt);
 }

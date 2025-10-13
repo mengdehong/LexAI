@@ -7,6 +7,7 @@ type StoredTerm = {
   id: number;
   term: string;
   definition: string;
+  definition_cn: string | null;
   review_stage: number;
   last_reviewed_at: string | null;
 };
@@ -79,6 +80,7 @@ export function TermsPanel() {
         await invoke("add_term", {
           term: entry.term,
           definition: entry.definition,
+          definition_cn: entry.definition_cn ?? null,
         });
         setInfoMessage(`Saved term ${trimmedTerm} to the global database.`);
       } catch (err) {
@@ -101,6 +103,7 @@ export function TermsPanel() {
           id: candidateId,
           term: entry.term,
           definition: entry.definition,
+          definition_cn: entry.definition_cn ?? null,
         });
         setInfoMessage(`Updated definition for ${entry.term}.`);
         setDuplicateCandidate(null);

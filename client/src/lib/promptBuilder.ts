@@ -48,3 +48,21 @@ Requirements:
 4. Preserve the learner's domain language and avoid duplicates.
 5. Do not include commentary, markdown, or any text outside the JSON array.`;
 }
+
+export function buildExplanationPrompt(snippet: string, language: DefinitionLanguage): string {
+  const instruction =
+    language === "zh-CN"
+      ? "请使用简体中文给出释义，并在需要时补充关键背景或例子，最多 120 字。"
+      : "Answer in clear English, optionally including a concise example. Limit to 2-3 sentences.";
+
+  const trimmed = snippet.trim();
+  const truncated = trimmed.length > 2000 ? `${trimmed.slice(0, 2000)}…` : trimmed;
+
+  return `Provide a precise, pedagogical explanation for the highlighted passage. ${instruction}
+Focus on what the learner must know to understand or apply it correctly.
+
+Passage:
+"""
+${truncated}
+"""`;
+}

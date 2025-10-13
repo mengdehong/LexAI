@@ -22,6 +22,7 @@ struct Term {
     id: i64,
     term: String,
     definition: String,
+    definition_cn: Option<String>,
     review_stage: i64,
     last_reviewed_at: Option<String>,
 }
@@ -96,11 +97,13 @@ async fn search_term_contexts(doc_id: String, term: String) -> Result<Vec<String
 async fn add_term(
     term: String,
     definition: String,
+    definition_cn: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    sqlx::query("INSERT INTO terms (term, definition) VALUES (?, ?)")
+    sqlx::query("INSERT INTO terms (term, definition, definition_cn) VALUES (?, ?, ?)")
         .bind(term)
         .bind(definition)
+        .bind(definition_cn)
         .execute(&state.pool)
         .await
         .map_err(|err| err.to_string())?;
@@ -111,7 +114,7 @@ async fn add_term(
 #[tauri::command]
 async fn get_all_terms(state: State<'_, AppState>) -> Result<Vec<Term>, String> {
     let records = sqlx::query(
-        "SELECT id, term, COALESCE(definition, '') AS definition, review_stage, last_reviewed_at FROM terms ORDER BY created_at DESC",
+        "SELECT id, term, COALESCE(definition, '') AS definition, definition_cn, review_stage, last_reviewed_at FROM terms ORDER BY created_at DESC",
     )
         .fetch_all(&state.pool)
         .await
@@ -123,6 +126,7 @@ async fn get_all_terms(state: State<'_, AppState>) -> Result<Vec<Term>, String> 
             id: row.get("id"),
             term: row.get("term"),
             definition: row.get("definition"),
+            definition_cn: row.get("definition_cn"),
             review_stage: row.get("review_stage"),
             last_reviewed_at: row.get("last_reviewed_at"),
         })
@@ -137,7 +141,7 @@ async fn find_term_by_name(
     state: State<'_, AppState>,
 ) -> Result<Option<Term>, String> {
     let record = sqlx::query(
-        "SELECT id, term, COALESCE(definition, '') AS definition, review_stage, last_reviewed_at FROM terms WHERE lower(term) = lower(?) LIMIT 1",
+        "SELECT id, term, COALESCE(definition, '') AS definition, definition_cn, review_stage, last_reviewed_at FROM terms WHERE lower(term) = lower(?) LIMIT 1",
     )
     .bind(&term)
     .fetch_optional(&state.pool)
@@ -148,6 +152,7 @@ async fn find_term_by_name(
         id: row.get("id"),
         term: row.get("term"),
         definition: row.get("definition"),
+        definition_cn: row.get("definition_cn"),
         review_stage: row.get("review_stage"),
         last_reviewed_at: row.get("last_reviewed_at"),
     });
@@ -171,11 +176,13 @@ async fn update_term(
     id: i64,
     term: String,
     definition: String,
+    definition_cn: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    sqlx::query("UPDATE terms SET term = ?, definition = ? WHERE id = ?")
+    sqlx::query("UPDATE terms SET term = ?, definition = ?, definition_cn = COALESCE(?, definition_cn) WHERE id = ?")
         .bind(term)
         .bind(definition)
+        .bind(definition_cn)
         .bind(id)
         .execute(&state.pool)
         .await
@@ -190,7 +197,7 @@ async fn export_terms_csv(
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
     let records = sqlx::query(
-        "SELECT term, COALESCE(definition, '') AS definition FROM terms ORDER BY lower(term) ASC",
+        "SELECT term, COALESCE(definition, '') AS definition, COALESCE(definition_cn, '') AS definition_cn FROM terms ORDER BY lower(term) ASC",
     )
     .fetch_all(&state.pool)
     .await
@@ -200,14 +207,16 @@ async fn export_terms_csv(
         return Err("No terms available to export.".to_string());
     }
 
-    let mut csv = String::from("Term,Definition\n");
+    let mut csv = String::from("Term,Definition,Definition (zh-CN)\n");
     for row in records {
         let term: String = row.get("term");
         let definition: String = row.get("definition");
+        let definition_cn: String = row.get("definition_cn");
         let line = format!(
-            "{},{}\n",
+            "{},{},{}\n",
             escape_csv_cell(&term),
-            escape_csv_cell(&definition)
+            escape_csv_cell(&definition),
+            escape_csv_cell(&definition_cn)
         );
         csv.push_str(&line);
     }
@@ -254,7 +263,7 @@ async fn get_review_terms(
     let limit = limit.unwrap_or(12).clamp(1, 100);
 
     let records = sqlx::query(
-        "SELECT id, term, COALESCE(definition, '') AS definition, review_stage, last_reviewed_at FROM terms ORDER BY review_stage ASC, COALESCE(last_reviewed_at, '') ASC, created_at ASC LIMIT ?",
+        "SELECT id, term, COALESCE(definition, '') AS definition, definition_cn, review_stage, last_reviewed_at FROM terms ORDER BY review_stage ASC, COALESCE(last_reviewed_at, '') ASC, created_at ASC LIMIT ?",
     )
     .bind(limit)
     .fetch_all(&state.pool)
@@ -267,6 +276,7 @@ async fn get_review_terms(
             id: row.get("id"),
             term: row.get("term"),
             definition: row.get("definition"),
+            definition_cn: row.get("definition_cn"),
             review_stage: row.get("review_stage"),
             last_reviewed_at: row.get("last_reviewed_at"),
         })

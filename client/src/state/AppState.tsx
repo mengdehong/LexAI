@@ -10,6 +10,7 @@ export type UploadedDocument = {
 export type TermDefinition = {
   term: string;
   definition: string;
+  definition_cn?: string | null;
 };
 
 type AppStateValue = {

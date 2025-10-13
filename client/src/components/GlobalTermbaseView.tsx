@@ -6,6 +6,7 @@ type StoredTerm = {
   id: number;
   term: string;
   definition: string;
+  definition_cn: string | null;
   review_stage: number;
   last_reviewed_at: string | null;
 };
@@ -25,7 +26,7 @@ export function GlobalTermbaseView() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
-  const [draft, setDraft] = useState({ term: "", definition: "" });
+  const [draft, setDraft] = useState({ term: "", definition: "", definition_cn: "" });
   const [savingId, setSavingId] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
@@ -104,23 +105,27 @@ export function GlobalTermbaseView() {
       return terms;
     }
     return terms.filter((entry) => {
-      const haystack = `${entry.term} ${entry.definition}`.toLowerCase();
+      const haystack = `${entry.term} ${entry.definition} ${entry.definition_cn ?? ""}`.toLowerCase();
       return tokens.every((token) => haystack.includes(token));
     });
   }, [terms, normalizedQuery]);
 
   const beginEdit = useCallback((record: StoredTerm) => {
     setEditingId(record.id);
-    setDraft({ term: record.term, definition: record.definition });
+    setDraft({
+      term: record.term,
+      definition: record.definition,
+      definition_cn: record.definition_cn ?? "",
+    });
     setToast(null);
   }, []);
 
   const cancelEdit = useCallback(() => {
     setEditingId(null);
-    setDraft({ term: "", definition: "" });
+    setDraft({ term: "", definition: "", definition_cn: "" });
   }, []);
 
-  const handleDraftChange = (field: "term" | "definition") =>
+  const handleDraftChange = (field: "term" | "definition" | "definition_cn") =>
     (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
       const value = event.target.value;
       setDraft((prev) => ({ ...prev, [field]: value }));
@@ -130,6 +135,7 @@ export function GlobalTermbaseView() {
     async (id: number) => {
       const trimmedTerm = draft.term.trim();
       const trimmedDefinition = draft.definition.trim();
+      const trimmedDefinitionCn = draft.definition_cn.trim();
       if (!trimmedTerm) {
         setToast({ kind: "error", message: "Term cannot be empty." });
         return;
@@ -142,11 +148,17 @@ export function GlobalTermbaseView() {
           id,
           term: trimmedTerm,
           definition: trimmedDefinition,
+          definition_cn: trimmedDefinitionCn,
         });
         setTerms((prev) =>
           prev.map((entry) =>
             entry.id === id
-              ? { ...entry, term: trimmedTerm, definition: trimmedDefinition }
+              ? {
+                  ...entry,
+                  term: trimmedTerm,
+                  definition: trimmedDefinition,
+                  definition_cn: trimmedDefinitionCn,
+                }
               : entry,
           ),
         );
@@ -159,7 +171,7 @@ export function GlobalTermbaseView() {
         setSavingId(null);
       }
     },
-    [cancelEdit, draft.definition, draft.term],
+    [cancelEdit, draft.definition, draft.definition_cn, draft.term],
   );
 
   const deleteTerm = useCallback(
@@ -305,9 +317,10 @@ export function GlobalTermbaseView() {
         <table className="term-table">
           <thead>
             <tr>
-              <th>ID</th>
+              <th className="term-table__id" aria-hidden="true">ID</th>
               <th>Term</th>
               <th>Definition</th>
+              <th>中文释义</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -317,7 +330,7 @@ export function GlobalTermbaseView() {
               const isSaving = savingId === record.id;
               return (
                 <tr key={record.id}>
-                  <td>{record.id}</td>
+                  <td className="term-table__id" aria-hidden="true">{record.id}</td>
                   <td>
                     {isEditing ? (
                       <input
@@ -340,6 +353,19 @@ export function GlobalTermbaseView() {
                       />
                     ) : (
                       record.definition
+                    )}
+                  </td>
+                  <td>
+                    {isEditing ? (
+                      <textarea
+                        className="term-table__textarea"
+                        value={draft.definition_cn}
+                        onChange={handleDraftChange("definition_cn")}
+                        disabled={isSaving}
+                        placeholder="提供最精炼的中文释义"
+                      />
+                    ) : (
+                      record.definition_cn ?? "—"
                     )}
                   </td>
                   <td>
@@ -400,7 +426,14 @@ export function GlobalTermbaseView() {
               </div>
               <div className="review-card__term">{currentReviewTerm.term}</div>
               {revealed ? (
-                <div className="review-card__definition">{currentReviewTerm.definition}</div>
+                <div className="review-card__definition-group">
+                  <div className="review-card__definition">{currentReviewTerm.definition}</div>
+                  {currentReviewTerm.definition_cn && (
+                    <div className="review-card__definition review-card__definition--cn">
+                      {currentReviewTerm.definition_cn}
+                    </div>
+                  )}
+                </div>
               ) : (
                 <button
                   type="button"

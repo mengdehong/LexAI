@@ -22,6 +22,7 @@ type StoredTerm = {
   id: number;
   term: string;
   definition: string;
+  definition_cn: string | null;
   review_stage: number;
   last_reviewed_at: string | null;
 };
@@ -292,9 +293,14 @@ export function OnboardingView({
               id: current.id,
               term: entry.term,
               definition: entry.definition,
+              definition_cn: entry.definition_cn ?? null,
             });
           }
-          return invoke("add_term", { term: entry.term, definition: entry.definition });
+          return invoke("add_term", {
+            term: entry.term,
+            definition: entry.definition,
+            definition_cn: entry.definition_cn ?? null,
+          });
         }),
       );
 
