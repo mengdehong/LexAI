@@ -34,7 +34,7 @@ export function buildOnboardingPrompt(profile: OnboardingProfile, language: Defi
   const domain = profile.domain.trim() || "General";
   const goals = profile.goals.trim() || "Build a personalised glossary.";
 
-  return `You are LexAI's onboarding mentor. Craft a personalised starter glossary for a new learner.
+  return `You are LexAI's onboarding mentor. Craft a comprehensive starter glossary for a new learner.
 Learner profile:
 - Domain expertise: ${domain}
 - English proficiency: ${proficiency}
@@ -42,8 +42,9 @@ Learner profile:
 
 ${instruction}
 Requirements:
-1. Return 12 essential terms that accelerate the learner's progress in the stated domain.
-2. Provide concise, context-aware definitions that the learner can apply immediately.
-3. Only answer with a minified JSON array of objects shaped as {"term": "...", "definition": "..."}.
-4. Avoid commentary, markdown, or explanations outside of the JSON array.`;
+1. Return between 60 and 80 high-impact terms grouped into three categories: "Foundational Core", "Applied Practice", and "Advanced Frontier".
+2. Provide concise, context-aware definitions (40-80 words) that the learner can apply immediately.
+3. Respond with a minified JSON array; each object must include "term", "definition", and "category" (the category names above).
+4. Preserve the learner's domain language and avoid duplicates.
+5. Do not include commentary, markdown, or any text outside the JSON array.`;
 }

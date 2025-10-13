@@ -1,7 +1,7 @@
-import { FormEvent, useCallback, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import type { DefinitionLanguage } from "../lib/configStore";
-import { markOnboardingComplete } from "../lib/configStore";
+import { loadConfig, markOnboardingComplete } from "../lib/configStore";
 import { generateOnboardingTerms } from "../lib/llmClient";
 import type { OnboardingProfile } from "../lib/promptBuilder";
 
@@ -29,6 +29,23 @@ const PROFICIENCY_OPTIONS: Array<{ label: string; value: OnboardingProfile["prof
   { label: "Intermediate", value: "intermediate", helper: "I can read most materials with occasional lookups." },
   { label: "Advanced", value: "advanced", helper: "I handle expert materials but want sharper terminology." },
 ];
+
+const PROGRESS_SEQUENCE = ["preparing", "generating", "saving"] as const;
+type ActiveProgress = (typeof PROGRESS_SEQUENCE)[number];
+type ProgressPhase = "idle" | ActiveProgress;
+
+const PROGRESS_COPY: Record<DefinitionLanguage, Record<ActiveProgress, string>> = {
+  en: {
+    preparing: "Preparing personalised prompt…",
+    generating: "Requesting glossary from the AI provider…",
+    saving: "Saving terms into your global termbase…",
+  },
+  "zh-CN": {
+    preparing: "正在整理个性化提示词…",
+    generating: "正在向模型请求术语列表…",
+    saving: "正在将术语写入全局术语库…",
+  },
+};
 
 function createMessage(role: ChatMessage["role"], content: string): ChatMessage {
   const id =
@@ -59,6 +76,9 @@ export function OnboardingView({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [progress, setProgress] = useState<ProgressPhase>("idle");
+  const [modelHint, setModelHint] = useState<string | null>(null);
+  const [currentModelLabel, setCurrentModelLabel] = useState<string | null>(null);
 
   const canSubmit = useMemo(() => {
     if (!hasOnboardingMapping) {
@@ -76,6 +96,69 @@ export function OnboardingView({
     return true;
   }, [domain, goals, hasOnboardingMapping, proficiency, step]);
 
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      try {
+        const config = await loadConfig();
+        if (!active) {
+          return;
+        }
+        const mapping = config.modelMapping.onboarding;
+        if (!mapping) {
+          setCurrentModelLabel(null);
+          setModelHint(null);
+          return;
+        }
+
+        const provider = config.providers.find((entry) => entry.id === mapping.providerId);
+        const providerLabel = provider?.name?.trim() || provider?.vendor || mapping.providerId;
+        const modelLabel = mapping.model?.trim() ?? "";
+        const combinedLabel = modelLabel ? `${providerLabel} · ${modelLabel}` : providerLabel;
+        setCurrentModelLabel(combinedLabel);
+
+        const normalizedModel = modelLabel.toLowerCase();
+        const baseRecommendationEn =
+          "For richer starter glossaries, consider mapping onboarding to GPT-4o or Claude 3 Sonnet. These premium models cost more and may take longer, but deliver higher quality terminology.";
+        const baseRecommendationZh =
+          "若希望获得更高质量的术语库，建议在设置中将对话式引导绑定到 GPT-4o 或 Claude 3 Sonnet 等高阶模型。它们成本更高、耗时更长，但能提供更全面的术语。";
+        const highQuality =
+          /gpt-4|claude-3|sonnet|opus|gemini-1\.5.*(pro|ultra)|claude\s*3\.5/.test(normalizedModel);
+        const prefersSpeed =
+          (provider?.vendor === "gemini" && /flash/.test(normalizedModel)) ||
+          (provider?.vendor === "openai" && /gpt-3\.5|mini/.test(normalizedModel));
+
+        let note: string | null;
+        if (highQuality) {
+          note =
+            language === "zh-CN"
+              ? "你正在使用高质量模型，生成过程可能稍久，但会带来更丰富的术语成果。"
+              : "You’re already using a high-quality model; generation may take a little longer but yields richer terminology.";
+        } else if (prefersSpeed) {
+          note =
+            language === "zh-CN"
+              ? "当前模型偏向速度。若想提升术语质量，可在设置中改用 GPT-4o 或 Claude 3 Sonnet。"
+              : "The current model prioritises speed. Switch to GPT-4o or Claude 3 Sonnet in Settings for higher-quality glossaries.";
+        } else {
+          note = language === "zh-CN" ? baseRecommendationZh : baseRecommendationEn;
+        }
+
+        setModelHint(note);
+      } catch (err) {
+        if (!active) {
+          return;
+        }
+        setCurrentModelLabel(null);
+        setModelHint(null);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [language]);
+
   const enqueueAssistantMessage = useCallback(
     (content: string) => {
       setMessages((prev) => [...prev, createMessage("assistant", content)]);
@@ -89,6 +172,26 @@ export function OnboardingView({
     },
     [setMessages],
   );
+
+  const progressMessage = useMemo(() => {
+    if (progress === "idle") {
+      return null;
+    }
+    const step = progress as ActiveProgress;
+    const index = PROGRESS_SEQUENCE.indexOf(step);
+    if (index === -1) {
+      return null;
+    }
+    const label = PROGRESS_COPY[language]?.[step];
+    if (!label) {
+      return null;
+    }
+    const total = PROGRESS_SEQUENCE.length;
+    if (language === "zh-CN") {
+      return `进度 ${index + 1}/${total}：${label}`;
+    }
+    return `Progress ${index + 1}/${total}: ${label}`;
+  }, [language, progress]);
 
   const handleDomainSubmit = useCallback(
     (event: FormEvent<HTMLFormElement>) => {
@@ -155,6 +258,7 @@ export function OnboardingView({
     setBusy(true);
     setError(null);
     setSuccessMessage(null);
+    setProgress("preparing");
 
     try {
       const profile: OnboardingProfile = {
@@ -163,6 +267,7 @@ export function OnboardingView({
         goals: goals.trim(),
       };
 
+      setProgress("generating");
       const terms = await generateOnboardingTerms(profile);
       if (terms.length === 0) {
         throw new Error(
@@ -175,6 +280,7 @@ export function OnboardingView({
       const existing = await invoke<StoredTerm[]>("get_all_terms");
       const lookup = new Map(existing.map((item) => [item.term.toLowerCase(), item]));
 
+      setProgress("saving");
       await Promise.all(
         terms.map((entry) => {
           const key = entry.term.toLowerCase();
@@ -205,6 +311,7 @@ export function OnboardingView({
       const detail = err instanceof Error ? err.message : String(err);
       setError(detail || "Failed to complete onboarding.");
     } finally {
+      setProgress("idle");
       setBusy(false);
     }
   }, [busy, domain, goals, hasOnboardingMapping, language, onComplete, proficiency]);
@@ -299,6 +406,9 @@ export function OnboardingView({
             <dd>{goals || "—"}</dd>
           </div>
         </dl>
+        {busy && progressMessage && (
+          <p className="onboarding-helper onboarding-progress-status">{progressMessage}</p>
+        )}
         <button type="button" onClick={handleGenerate} disabled={busy || !hasOnboardingMapping}>
           {busy
             ? language === "zh-CN"
@@ -340,6 +450,14 @@ export function OnboardingView({
               : "Please assign a model to the onboarding operation in Settings before continuing."}
           </div>
         )}
+        {currentModelLabel && (
+          <p className="onboarding-helper onboarding-model-label">
+            {language === "zh-CN"
+              ? `当前对话式引导模型：${currentModelLabel}`
+              : `Current onboarding model: ${currentModelLabel}`}
+          </p>
+        )}
+        {modelHint && <p className="onboarding-helper onboarding-model-hint">{modelHint}</p>}
 
         <div className="onboarding-chat">
           <ul>
