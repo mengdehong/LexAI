@@ -47,8 +47,31 @@ export function DocumentPanel() {
         });
 
         if (!response.ok) {
-          const detail = await response.text();
-          throw new Error(detail || `Upload failed with status ${response.status}`);
+          const responseClone = response.clone();
+          let detailMessage = `Upload failed with status ${response.status}`;
+
+          try {
+            const errorPayload = await response.json();
+            const detail = errorPayload?.detail;
+            if (typeof detail === "string" && detail.trim().length > 0) {
+              detailMessage = detail;
+            } else if (detail && typeof detail === "object") {
+              const message = typeof detail.message === "string" ? detail.message : "";
+              const code = typeof detail.code === "string" ? detail.code : "";
+              detailMessage = [message, code].filter(Boolean).join(" — ") || detailMessage;
+            }
+          } catch (jsonErr) {
+            try {
+              const text = await responseClone.text();
+              if (text.trim().length > 0) {
+                detailMessage = text;
+              }
+            } catch {
+              console.warn("Failed to parse upload error response", jsonErr);
+            }
+          }
+
+          throw new Error(detailMessage);
         }
 
         const payload: { document_id?: string; status?: string; message?: string } =

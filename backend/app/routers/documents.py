@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 from pathlib import Path
 
@@ -12,9 +13,13 @@ from ..schemas import DocumentUploadResponse, SearchResponse, SearchResult
 from ..services import (
     COLLECTION_NAME,
     create_qdrant_client,
+    DocumentProcessingError,
     get_embedder,
     process_and_embed_document,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/documents", tags=["documents"])
@@ -43,9 +48,14 @@ async def upload_document(
 
     try:
         await process_and_embed_document(str(temp_path), document_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except DocumentProcessingError as exc:
+        logger.warning("Document processing failed", exc_info=exc)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"code": exc.code, "message": str(exc)},
+        ) from exc
     except Exception as exc:  # pragma: no cover - unexpected runtime failure
+        logger.exception("Document processing crashed")
         raise HTTPException(status_code=500, detail=f"Failed to process document: {exc}") from exc
     finally:
         temp_path.unlink(missing_ok=True)

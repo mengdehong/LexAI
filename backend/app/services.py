@@ -5,13 +5,61 @@ import uuid
 from pathlib import Path
 from functools import lru_cache
 from importlib import import_module
-from typing import TYPE_CHECKING, Any, List
+from typing import TYPE_CHECKING, Any, List, Optional
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from qdrant_client import QdrantClient, models
 from qdrant_client.http.exceptions import UnexpectedResponse
 
 from .config import get_settings
+
+
+class DocumentProcessingError(Exception):
+    """Raised when a document fails to be processed due to user-actionable issues."""
+
+    def __init__(self, code: str, message: str, original: Optional[Exception] = None) -> None:
+        super().__init__(message)
+        self.code = code
+        self.original = original
+
+
+def _classify_extraction_failure(exc: Exception) -> DocumentProcessingError:
+    message = str(exc)
+    lowered = message.lower()
+
+    if "encrypted" in lowered:
+        return DocumentProcessingError(
+            "encrypted_document",
+            "Failed to parse encrypted document. Remove the password protection and try again.",
+            exc,
+        )
+
+    if "password" in lowered:
+        return DocumentProcessingError(
+            "password_protected",
+            "Document is password protected and cannot be processed.",
+            exc,
+        )
+
+    if "unsupported" in lowered or "format" in lowered:
+        return DocumentProcessingError(
+            "unsupported_format",
+            "Unsupported document format. Please upload a PDF, DOCX, or text file.",
+            exc,
+        )
+
+    if "tika" in lowered and "timeout" in lowered:
+        return DocumentProcessingError(
+            "parser_timeout",
+            "Document parsing timed out. Try simplifying the file or splitting it.",
+            exc,
+        )
+
+    return DocumentProcessingError(
+        "extraction_failure",
+        f"Failed to extract document text: {message}",
+        exc,
+    )
 
 try:
     import rust_core
@@ -74,29 +122,45 @@ async def process_and_embed_document(file_path: str, document_id: str) -> None:
     try:
         extracted_text = await asyncio.to_thread(rust_core.extract_text, file_path)
     except Exception as exc:  # pragma: no cover - rust_core failure surfaces at runtime
-        raise RuntimeError(f"Failed to extract text from document: {exc}") from exc
+        raise _classify_extraction_failure(exc) from exc
     text = extracted_text.strip()
 
     if not text:
-        raise ValueError("Extracted document text is empty")
+        raise DocumentProcessingError(
+            "empty_document",
+            "The extracted document text is empty.",
+        )
 
     splitter = get_text_splitter()
     chunks = splitter.split_text(text)
 
     if not chunks:
-        raise ValueError("No text chunks were generated from the document")
+        raise DocumentProcessingError(
+            "chunking_failure",
+            "No text chunks were generated from the document.",
+        )
 
     embedder = get_embedder(settings.embedding_model_name)
-    embeddings = await asyncio.to_thread(
-        embedder.encode,
-        chunks,
-        convert_to_numpy=True,
-    )
+    try:
+        embeddings = await asyncio.to_thread(
+            embedder.encode,
+            chunks,
+            convert_to_numpy=True,
+        )
+    except Exception as exc:
+        raise DocumentProcessingError(
+            "embedding_failure",
+            "Failed to generate embeddings for document chunks.",
+            exc,
+        ) from exc
 
     vectors: List[List[float]] = embeddings.tolist()
 
     if not vectors:
-        raise ValueError("No embeddings generated for document chunks")
+        raise DocumentProcessingError(
+            "embedding_failure",
+            "No embeddings were generated for document chunks.",
+        )
 
     client = create_qdrant_client(settings.qdrant_host)
     await asyncio.to_thread(ensure_collection, client, len(vectors[0]))
