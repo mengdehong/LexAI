@@ -1,7 +1,9 @@
 
-import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { useAppState } from "../state/AppState";
+import { expandTerm, type TermExpansionResult } from "../lib/llmClient";
+import { useLocale } from "../state/LocaleContext";
 
 type StoredTerm = {
   id: number;
@@ -17,12 +19,17 @@ type ToastState = {
   message: string;
 } | null;
 
-type ViewMode = "table" | "review";
+const REVIEW_BATCH_SIZE = 20;
 
-const REVIEW_BATCH_SIZE = 12;
+type GlobalTermbaseViewProps = {
+  refreshToken?: number;
+  onReviewCountChange?: (count: number) => void;
+};
 
-export function GlobalTermbaseView() {
+export function GlobalTermbaseView({ refreshToken = 0, onReviewCountChange }: GlobalTermbaseViewProps) {
   const { refreshGlobalTerms } = useAppState();
+  const language = useLocale();
+  const isChinese = language === "zh-CN";
   const [terms, setTerms] = useState<StoredTerm[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -32,13 +39,14 @@ export function GlobalTermbaseView() {
   const [savingId, setSavingId] = useState<number | null>(null);
   const [exporting, setExporting] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
-  const [mode, setMode] = useState<ViewMode>("table");
-  const [reviewLoading, setReviewLoading] = useState(false);
-  const [reviewError, setReviewError] = useState<string | null>(null);
-  const [reviewTerms, setReviewTerms] = useState<StoredTerm[]>([]);
-  const [reviewIndex, setReviewIndex] = useState(0);
-  const [revealed, setRevealed] = useState(false);
-  const [submittingReview, setSubmittingReview] = useState(false);
+  const [reviewDueCount, setReviewDueCount] = useState(0);
+  const [expansionCache, setExpansionCache] = useState<Record<number, TermExpansionResult>>({});
+  const [activeExpansion, setActiveExpansion] = useState<StoredTerm | null>(null);
+  const [expansionDomain, setExpansionDomain] = useState("");
+  const [lastExpansionDomain, setLastExpansionDomain] = useState("");
+  const [expansionResult, setExpansionResult] = useState<TermExpansionResult | null>(null);
+  const [expansionLoading, setExpansionLoading] = useState(false);
+  const [expansionError, setExpansionError] = useState<string | null>(null);
 
   const loadTerms = useCallback(async () => {
     setLoading(true);
@@ -49,44 +57,32 @@ export function GlobalTermbaseView() {
       refreshGlobalTerms().catch(() => {
         /* already logged in provider */
       });
+      try {
+        const summary = await invoke<StoredTerm[]>("get_review_terms", { limit: REVIEW_BATCH_SIZE });
+        setReviewDueCount(summary.length);
+        onReviewCountChange?.(summary.length);
+      } catch {
+        setReviewDueCount(0);
+        onReviewCountChange?.(0);
+      }
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       setError(detail);
     } finally {
       setLoading(false);
     }
-  }, [refreshGlobalTerms]);
-
-  const loadReviewQueue = useCallback(async () => {
-    setReviewLoading(true);
-    setReviewError(null);
-    setSubmittingReview(false);
-    setRevealed(false);
-    try {
-      const payload = await invoke<StoredTerm[]>("get_review_terms", { limit: REVIEW_BATCH_SIZE });
-      setReviewTerms(payload);
-      setReviewIndex(0);
-      if (payload.length === 0) {
-        setReviewError("No terms are currently due for review.");
-      }
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
-      setReviewError(detail);
-      setReviewTerms([]);
-    } finally {
-      setReviewLoading(false);
-    }
-  }, []);
+  }, [onReviewCountChange, refreshGlobalTerms]);
 
   useEffect(() => {
     loadTerms();
   }, [loadTerms]);
 
   useEffect(() => {
-    if (mode === "review") {
-      loadReviewQueue();
+    if (refreshToken <= 0) {
+      return;
     }
-  }, [mode, loadReviewQueue]);
+    loadTerms();
+  }, [refreshToken, loadTerms]);
 
   useEffect(() => {
     if (!toast) {
@@ -95,6 +91,10 @@ export function GlobalTermbaseView() {
     const timer = window.setTimeout(() => setToast(null), 4000);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    onReviewCountChange?.(reviewDueCount);
+  }, [onReviewCountChange, reviewDueCount]);
 
   const handleSearchChange = (event: ChangeEvent<HTMLInputElement>) => {
     setQuery(event.target.value);
@@ -142,7 +142,10 @@ export function GlobalTermbaseView() {
       const trimmedDefinition = draft.definition.trim();
       const trimmedDefinitionCn = draft.definition_cn.trim();
       if (!trimmedTerm) {
-        setToast({ kind: "error", message: "Term cannot be empty." });
+        setToast({
+          kind: "error",
+          message: isChinese ? "术语不能为空。" : "Term cannot be empty.",
+        });
         return;
       }
 
@@ -167,7 +170,10 @@ export function GlobalTermbaseView() {
               : entry,
           ),
         );
-        setToast({ kind: "success", message: `Updated ${trimmedTerm}.` });
+        setToast({
+          kind: "success",
+          message: isChinese ? `已更新 ${trimmedTerm}。` : `Updated ${trimmedTerm}.`,
+        });
         cancelEdit();
         refreshGlobalTerms().catch(() => {
           /* ignore */
@@ -179,7 +185,7 @@ export function GlobalTermbaseView() {
         setSavingId(null);
       }
     },
-    [cancelEdit, draft.definition, draft.definition_cn, draft.term, refreshGlobalTerms],
+    [cancelEdit, draft.definition, draft.definition_cn, draft.term, isChinese, refreshGlobalTerms],
   );
 
   const deleteTerm = useCallback(
@@ -189,7 +195,10 @@ export function GlobalTermbaseView() {
       try {
         await invoke("delete_term", { id });
         setTerms((prev) => prev.filter((entry) => entry.id !== id));
-        setToast({ kind: "success", message: "Term deleted." });
+        setToast({
+          kind: "success",
+          message: isChinese ? "已删除该术语。" : "Term deleted.",
+        });
         refreshGlobalTerms().catch(() => {
           /* ignore */
         });
@@ -200,286 +209,419 @@ export function GlobalTermbaseView() {
         setSavingId(null);
       }
     },
-    [refreshGlobalTerms],
+    [isChinese, refreshGlobalTerms],
   );
 
   const handleExport = useCallback(async () => {
     if (terms.length === 0) {
-      setToast({ kind: "error", message: "No terms available to export." });
+      setToast({
+        kind: "error",
+        message: isChinese ? "暂无可导出的术语。" : "No terms available to export.",
+      });
       return;
     }
     setExporting(true);
     setError(null);
     try {
       await invoke("export_terms_csv");
-      setToast({ kind: "success", message: "CSV export completed." });
+      setToast({
+        kind: "success",
+        message: isChinese ? "CSV 导出完成。" : "CSV export completed.",
+      });
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       setError(detail);
     } finally {
       setExporting(false);
     }
-  }, [terms.length]);
+  }, [isChinese, terms.length]);
 
-  const enterReviewMode = useCallback(() => {
-    setMode("review");
+  const openExpansion = useCallback(
+    (record: StoredTerm) => {
+      setActiveExpansion(record);
+      setExpansionError(null);
+      const cached = expansionCache[record.id] ?? null;
+      setExpansionResult(cached);
+      const domain = lastExpansionDomain.trim();
+      setExpansionDomain(domain);
+      if (!cached) {
+        setExpansionLoading(false);
+      }
+    },
+    [expansionCache, lastExpansionDomain],
+  );
+
+  const closeExpansion = useCallback(() => {
+    setActiveExpansion(null);
+    setExpansionDomain("");
+    setExpansionResult(null);
+    setExpansionError(null);
+    setExpansionLoading(false);
   }, []);
 
-  const exitReviewMode = useCallback(() => {
-    setMode("table");
-    setReviewTerms([]);
-    setReviewIndex(0);
-    setReviewError(null);
-    setRevealed(false);
+  const handleExpansionDomainChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    setExpansionDomain(event.target.value);
   }, []);
 
-  const currentReviewTerm = reviewTerms[reviewIndex] ?? null;
-
-  const handleShowAnswer = useCallback(() => {
-    setRevealed(true);
-  }, []);
-
-  const handleReviewAction = useCallback(
-    async (known: boolean) => {
-      if (!currentReviewTerm) {
+  const runExpansion = useCallback(
+    async (event?: FormEvent) => {
+      if (event) {
+        event.preventDefault();
+      }
+      if (!activeExpansion || expansionLoading) {
         return;
       }
 
-      setSubmittingReview(true);
-      setReviewError(null);
+      setExpansionLoading(true);
+      setExpansionError(null);
       try {
-        await invoke("submit_review_result", { id: currentReviewTerm.id, known });
-        await loadReviewQueue();
+        const payload = await expandTerm({
+          term: activeExpansion.term,
+          definition: activeExpansion.definition,
+          definitionCn: activeExpansion.definition_cn ?? undefined,
+          domain: expansionDomain,
+        });
+        setExpansionResult(payload);
+        setExpansionCache((prev) => ({ ...prev, [activeExpansion.id]: payload }));
+        const trimmedDomain = expansionDomain.trim();
+        if (trimmedDomain) {
+          setLastExpansionDomain(trimmedDomain);
+        }
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
-        setReviewError(detail);
+        if (isChinese) {
+          if (detail.includes("incomplete expansion data")) {
+            setExpansionError("AI 返回的数据不完整，请稍后重试或更换模型。");
+          } else if (detail.toLowerCase().includes("json")) {
+            setExpansionError("解析 AI 返回的内容时出错，请重试。" );
+          } else {
+            setExpansionError(detail);
+          }
+        } else {
+          setExpansionError(detail);
+        }
       } finally {
-        setSubmittingReview(false);
-        setRevealed(false);
+        setExpansionLoading(false);
       }
     },
-    [currentReviewTerm, loadReviewQueue],
+    [activeExpansion, expansionDomain, expansionLoading, isChinese],
   );
 
+  useEffect(() => {
+    if (!activeExpansion) {
+      return;
+    }
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [activeExpansion]);
+
   return (
-    <section className="panel global-view">
-      <header className="panel__header">
-        <div>
-          <h2>Global Termbase</h2>
-          <p className="panel__subtitle">Your personalised terminology vault.</p>
-        </div>
-        <div className="termbase-toolbar">
-          <div className="termbase-search">
-            <input
-              type="search"
-              value={query}
-              onChange={handleSearchChange}
-              placeholder="Search term or definition"
-              aria-label="Search global termbase"
-              disabled={mode === "review"}
-            />
-          </div>
-          <button
-            type="button"
-            className="pill-button"
-            onClick={loadTerms}
-            disabled={loading || mode === "review"}
-          >
-            {loading ? "Refreshing…" : "Refresh"}
-          </button>
-          <button
-            type="button"
-            className="pill-button"
-            onClick={handleExport}
-            disabled={exporting || terms.length === 0 || mode === "review"}
-            aria-busy={exporting}
-          >
-            {exporting ? "Exporting…" : "Export CSV"}
-          </button>
-          {mode === "table" ? (
-            <button type="button" className="pill-button" onClick={enterReviewMode}>
-              Review mode
-            </button>
-          ) : (
-            <button type="button" className="pill-button" onClick={exitReviewMode}>
-              Exit review
-            </button>
-          )}
-        </div>
-      </header>
-      {toast && <div className={`panel-toast ${toast.kind}`}>{toast.message}</div>}
-      {mode === "table" && error && <p className="panel__status error">{error}</p>}
-      {mode === "table" && loading && <p className="panel__status">Loading terms…</p>}
-      {mode === "table" && !loading && filteredTerms.length === 0 && (
-        <div className="termbase-empty">
-          <h3>
-            {normalizedQuery
-              ? `No matches for "${query}"`
-              : "Your termbase is empty"}
-          </h3>
-          <p>
-            {normalizedQuery
-              ? "Try adjusting your search keywords or reset to see all terms."
-              : "Run onboarding or save extracted terms to build your knowledge base."}
-          </p>
-        </div>
-      )}
-      {mode === "table" && filteredTerms.length > 0 && (
-        <table className="term-table">
-          <thead>
-            <tr>
-              <th className="term-table__id" aria-hidden="true">ID</th>
-              <th>Term</th>
-              <th>Definition</th>
-              <th>中文释义</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredTerms.map((record) => {
-              const isEditing = editingId === record.id;
-              const isSaving = savingId === record.id;
-              return (
-                <tr key={record.id}>
-                  <td className="term-table__id" aria-hidden="true">{record.id}</td>
-                  <td>
-                    {isEditing ? (
-                      <input
-                        className="term-table__input"
-                        value={draft.term}
-                        onChange={handleDraftChange("term")}
-                        disabled={isSaving}
-                      />
-                    ) : (
-                      record.term
-                    )}
-                  </td>
-                  <td>
-                    {isEditing ? (
-                      <textarea
-                        className="term-table__textarea"
-                        value={draft.definition}
-                        onChange={handleDraftChange("definition")}
-                        disabled={isSaving}
-                      />
-                    ) : (
-                      record.definition
-                    )}
-                  </td>
-                  <td>
-                    {isEditing ? (
-                      <textarea
-                        className="term-table__textarea"
-                        value={draft.definition_cn}
-                        onChange={handleDraftChange("definition_cn")}
-                        disabled={isSaving}
-                        placeholder="提供最精炼的中文释义"
-                      />
-                    ) : (
-                      record.definition_cn ?? "—"
-                    )}
-                  </td>
-                  <td>
-                    <div className="termbase-row-actions">
-                      {isEditing ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => handleSaveEdit(record.id)}
-                            disabled={isSaving}
-                          >
-                            {isSaving ? "Saving…" : "Save"}
-                          </button>
-                          <button
-                            type="button"
-                            className="ghost-button"
-                            onClick={cancelEdit}
-                            disabled={isSaving}
-                          >
-                            Cancel
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button type="button" onClick={() => beginEdit(record)}>
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => deleteTerm(record.id)}
-                            disabled={isSaving}
-                          >
-                            Delete
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
-      {mode === "review" && (
-        <div className="review-mode">
-          {reviewLoading && <p className="panel__status">Preparing review queue…</p>}
-          {reviewError && !reviewLoading && <p className="panel__status error">{reviewError}</p>}
-          {!reviewLoading && !reviewError && currentReviewTerm && (
-            <div className="review-card">
-              <div className="review-card__meta">
-                <span className="review-card__stage">Stage {currentReviewTerm.review_stage}</span>
-                {currentReviewTerm.last_reviewed_at && (
-                  <span className="review-card__timestamp">
-                    Last reviewed: {new Date(currentReviewTerm.last_reviewed_at).toLocaleString()}
-                  </span>
-                )}
-              </div>
-              <div className="review-card__term">{currentReviewTerm.term}</div>
-              {revealed ? (
-                <div className="review-card__definition-group">
-                  <div className="review-card__definition">{currentReviewTerm.definition}</div>
-                  {currentReviewTerm.definition_cn && (
-                    <div className="review-card__definition review-card__definition--cn">
-                      {currentReviewTerm.definition_cn}
-                    </div>
-                  )}
-                </div>
+    <>
+      <section className="panel global-view">
+        <header className="panel__header">
+          <div>
+            <h2>{isChinese ? "全局术语库" : "Global Termbase"}</h2>
+            <p className="panel__subtitle">
+              {isChinese ? "你的个性化术语知识库。" : "Your personalised terminology vault."}
+            </p>
+            <p className="termbase-review-summary">
+              {loading ? (
+                isChinese ? "正在统计今日复习任务…" : "Calculating today’s review queue…"
+              ) : reviewDueCount > 0 ? (
+                isChinese ? (
+                  <>
+                    今日待复习 <strong>{reviewDueCount}</strong> 个术语
+                  </>
+                ) : (
+                  <>
+                    <strong>{reviewDueCount}</strong> terms ready for review today
+                  </>
+                )
+              ) : isChinese ? (
+                "今日复习任务已完成"
               ) : (
-                <button
-                  type="button"
-                  className="pill-button review-card__show"
-                  onClick={handleShowAnswer}
-                  disabled={submittingReview}
-                >
-                  Show answer
-                </button>
+                "You’re all caught up for today"
               )}
-              <div className="review-card__actions">
-                <button
-                  type="button"
-                  className="pill-button negative"
-                  onClick={() => handleReviewAction(false)}
-                  disabled={submittingReview}
-                >
-                  {submittingReview ? "Updating…" : "Don't know"}
+            </p>
+          </div>
+          <div className="termbase-toolbar">
+            <div className="termbase-search">
+              <input
+                type="search"
+                value={query}
+                onChange={handleSearchChange}
+                placeholder="Search term or definition"
+                aria-label="Search global termbase"
+              />
+            </div>
+            <button
+              type="button"
+              className="pill-button"
+              onClick={loadTerms}
+              disabled={loading}
+            >
+              {loading
+                ? isChinese
+                  ? "正在刷新…"
+                  : "Refreshing…"
+                : isChinese
+                ? "刷新"
+                : "Refresh"}
+            </button>
+            <button
+              type="button"
+              className="pill-button"
+              onClick={handleExport}
+              disabled={exporting || terms.length === 0}
+              aria-busy={exporting}
+            >
+              {exporting
+                ? isChinese
+                  ? "正在导出…"
+                  : "Exporting…"
+                : isChinese
+                ? "导出 CSV"
+                : "Export CSV"}
+            </button>
+          </div>
+        </header>
+        {toast && <div className={`panel-toast ${toast.kind}`}>{toast.message}</div>}
+        {error && <p className="panel__status error">{error}</p>}
+        {loading && <p className="panel__status">{isChinese ? "正在加载术语…" : "Loading terms…"}</p>}
+        {!loading && filteredTerms.length === 0 && (
+          <div className="termbase-empty">
+            <h3>
+              {normalizedQuery
+                ? isChinese
+                  ? `没有找到 “${query}” 的匹配结果`
+                  : `No matches for "${query}"`
+                : isChinese
+                ? "你的术语库还是空的"
+                : "Your termbase is empty"}
+            </h3>
+            <p>
+              {normalizedQuery
+                ? isChinese
+                  ? "试试调整搜索关键词，或清空搜索查看全部术语。"
+                  : "Try adjusting your search keywords or reset to see all terms."
+                : isChinese
+                ? "运行对话式引导或保存提取的术语，丰富你的知识库。"
+                : "Run onboarding or save extracted terms to build your knowledge base."}
+            </p>
+          </div>
+        )}
+        {!loading && filteredTerms.length > 0 && (
+          <table className="term-table">
+            <thead>
+              <tr>
+                  <th className="term-table__id" aria-hidden="true">ID</th>
+                  <th>{isChinese ? "术语" : "Term"}</th>
+                  <th>{isChinese ? "释义" : "Definition"}</th>
+                  <th>{isChinese ? "中文释义" : "Definition (ZH)"}</th>
+                  <th>{isChinese ? "操作" : "Actions"}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredTerms.map((record) => {
+                const isEditing = editingId === record.id;
+                const isSaving = savingId === record.id;
+                return (
+                  <tr key={record.id}>
+                    <td className="term-table__id" aria-hidden="true">{record.id}</td>
+                    <td>
+                      {isEditing ? (
+                        <input
+                          className="term-table__input"
+                          value={draft.term}
+                          onChange={handleDraftChange("term")}
+                          disabled={isSaving}
+                        />
+                      ) : (
+                        record.term
+                      )}
+                    </td>
+                    <td>
+                      {isEditing ? (
+                        <textarea
+                          className="term-table__textarea"
+                          value={draft.definition}
+                          onChange={handleDraftChange("definition")}
+                          disabled={isSaving}
+                        />
+                      ) : (
+                        record.definition
+                      )}
+                    </td>
+                    <td>
+                      {isEditing ? (
+                        <textarea
+                          className="term-table__textarea"
+                          value={draft.definition_cn}
+                          onChange={handleDraftChange("definition_cn")}
+                          disabled={isSaving}
+                          placeholder="提供最精炼的中文释义"
+                        />
+                      ) : (
+                        record.definition_cn ?? "—"
+                      )}
+                    </td>
+                    <td>
+                      <div className="termbase-row-actions">
+                        {isEditing ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveEdit(record.id)}
+                              disabled={isSaving}
+                            >
+                            {isSaving
+                              ? isChinese
+                                ? "正在保存…"
+                                : "Saving…"
+                              : isChinese
+                              ? "保存"
+                              : "Save"}
+                            </button>
+                            <button
+                              type="button"
+                              className="ghost-button"
+                              onClick={cancelEdit}
+                              disabled={isSaving}
+                            >
+                            {isChinese ? "取消" : "Cancel"}
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button type="button" onClick={() => openExpansion(record)}>
+                              {isChinese ? "术语联想" : "Deep dive"}
+                            </button>
+                            <button type="button" onClick={() => beginEdit(record)}>
+                            {isChinese ? "编辑" : "Edit"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => deleteTerm(record.id)}
+                              disabled={isSaving}
+                            >
+                            {isChinese ? "删除" : "Delete"}
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </section>
+      {activeExpansion && (
+        <div className="deep-dive-overlay" role="dialog" aria-modal="true">
+          <div className="deep-dive-panel">
+            <header className="deep-dive-header">
+              <div>
+                <h3>{activeExpansion.term}</h3>
+                <p>
+                  {isChinese
+                    ? "深入理解该术语的使用场景与关联知识。可选填入领域，AI 将提供更贴切的联想。"
+                    : "Deep dive into this term’s context and discover related knowledge. Provide an optional domain to tailor AI insights."}
+                </p>
+              </div>
+              <div className="deep-dive-actions">
+                <button type="button" className="ghost-button" onClick={closeExpansion}>
+                  {isChinese ? "关闭" : "Close"}
                 </button>
                 <button
                   type="button"
-                  className="pill-button positive"
-                  onClick={() => handleReviewAction(true)}
-                  disabled={submittingReview || !revealed}
+                  className="pill-button"
+                  onClick={() => runExpansion()}
+                  disabled={expansionLoading}
                 >
-                  {submittingReview ? "Updating…" : "I know this"}
+                  {expansionLoading
+                    ? isChinese
+                      ? "正在生成…"
+                      : "Generating…"
+                    : isChinese
+                    ? "生成联想"
+                    : "Generate insights"}
                 </button>
               </div>
+            </header>
+            <div className="deep-dive-body">
+              <section className="deep-dive-context">
+                <h4>Current definition</h4>
+                <p>{activeExpansion.definition}</p>
+                {activeExpansion.definition_cn && (
+                  <p className="deep-dive-context__cn">{activeExpansion.definition_cn}</p>
+                )}
+                <form className="deep-dive-domain" onSubmit={runExpansion}>
+                  <label>
+                    {isChinese ? "聚焦领域（可选）" : "Domain focus (optional)"}
+                    <input
+                      type="text"
+                      placeholder=
+                        {isChinese
+                          ? "例如：AI 安全研究、金融合规"
+                          : "e.g. AI safety research, financial compliance"}
+                      value={expansionDomain}
+                      onChange={handleExpansionDomainChange}
+                      disabled={expansionLoading}
+                    />
+                  </label>
+                  <p className="deep-dive-helper">
+                    {isChinese
+                      ? "指定行业或场景，AI 会提供更贴切的内容。"
+                      : "Tailor the AI output by specifying the industry or scenario you care about."}
+                  </p>
+                </form>
+                {expansionError && <p className="panel__status error">{expansionError}</p>}
+              </section>
+              <section className="deep-dive-results" aria-busy={expansionLoading}>
+                {expansionLoading && (
+                  <p className="panel__status">
+                    {isChinese ? "正在生成术语联想内容…" : "Generating deep-dive insights…"}
+                  </p>
+                )}
+                {!expansionLoading && expansionResult && (
+                  <div className="deep-dive-content">
+                    <div>
+                      <h4>{isChinese ? "使用场景" : "Usage scenario"}</h4>
+                      <p>{expansionResult.usage_scenario}</p>
+                    </div>
+                    <div>
+                      <h4>{isChinese ? "示例句" : "Example sentences"}</h4>
+                      <ul>
+                        {expansionResult.example_sentences.map((sentence, index) => (
+                          <li key={index}>{sentence}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div>
+                      <h4>{isChinese ? "关联术语" : "Related terms"}</h4>
+                      <ul>
+                        {expansionResult.related_terms.map((entry, index) => (
+                          <li key={index}>
+                            <strong>{entry.term}</strong>
+                            <span> — {entry.relationship}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                )}
+                {!expansionLoading && !expansionResult && !expansionError && (
+                  <p className="panel__status">Provide a domain focus and generate to explore this term. 输入聚焦领域后点击生成，探索更多关联内容。</p>
+                )}
+              </section>
             </div>
-          )}
-          {!reviewLoading && !reviewError && !currentReviewTerm && (
-            <p className="panel__status">Nothing to review right now. Come back later!</p>
-          )}
+          </div>
         </div>
       )}
-    </section>
+    </>
   );
 }

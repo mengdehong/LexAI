@@ -22,6 +22,7 @@ export type ModelMapping = {
   termExtraction?: MappingEntry;
   explanation?: MappingEntry;
   onboarding?: MappingEntry;
+  deepDive?: MappingEntry;
 };
 
 export type Preferences = {
@@ -43,6 +44,23 @@ const DEFAULT_CONFIG: LexAIConfig = {
   },
   onboardingComplete: false,
 };
+
+function normalizeDefinitionLanguage(value: unknown): DefinitionLanguage {
+  if (typeof value !== "string") {
+    return "en";
+  }
+
+  const normalized = value.toLowerCase();
+  if (normalized === "zh-cn" || normalized === "zh_cn" || normalized === "zh" || normalized === "zh-hans") {
+    return "zh-CN";
+  }
+
+  if (normalized === "en" || normalized === "en-us" || normalized === "en_gb") {
+    return "en";
+  }
+
+  return value === "zh-CN" ? "zh-CN" : "en";
+}
 
 function cloneValue<T>(value: T): T {
   if (typeof structuredClone === "function") {
@@ -81,12 +99,22 @@ async function writeValue<T>(key: string, value: T): Promise<void> {
 }
 
 export async function loadConfig(): Promise<LexAIConfig> {
-  const [providers, modelMapping, preferences, onboardingComplete] = await Promise.all([
+  const [providers, modelMapping, rawPreferences, onboardingComplete] = await Promise.all([
     readValue<ProviderConfig[]>("providers", DEFAULT_CONFIG.providers),
     readValue<ModelMapping>("modelMapping", DEFAULT_CONFIG.modelMapping),
     readValue<Preferences>("preferences", DEFAULT_CONFIG.preferences),
     readValue<boolean>("onboardingComplete", DEFAULT_CONFIG.onboardingComplete),
   ]);
+
+  const normalizedLanguage = normalizeDefinitionLanguage(rawPreferences.definitionLanguage);
+  const preferences: Preferences =
+    rawPreferences.definitionLanguage === normalizedLanguage
+      ? rawPreferences
+      : { ...rawPreferences, definitionLanguage: normalizedLanguage };
+
+  if (preferences !== rawPreferences) {
+    await savePreferences(preferences);
+  }
 
   return {
     providers,
@@ -105,7 +133,11 @@ export async function saveModelMapping(next: ModelMapping): Promise<void> {
 }
 
 export async function savePreferences(next: Preferences): Promise<void> {
-  await writeValue("preferences", next);
+  const normalized: Preferences = {
+    ...next,
+    definitionLanguage: normalizeDefinitionLanguage(next.definitionLanguage),
+  };
+  await writeValue("preferences", normalized);
 }
 
 export async function upsertMapping(
@@ -123,8 +155,9 @@ export async function upsertMapping(
 }
 
 export async function setDefinitionLanguage(language: DefinitionLanguage): Promise<void> {
+  const normalized = normalizeDefinitionLanguage(language);
   const current = await readValue<Preferences>("preferences", DEFAULT_CONFIG.preferences);
-  await savePreferences({ ...current, definitionLanguage: language });
+  await savePreferences({ ...current, definitionLanguage: normalized });
 }
 
 export async function markOnboardingComplete(): Promise<void> {

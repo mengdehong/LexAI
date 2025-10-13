@@ -1,14 +1,16 @@
 import type { TermDefinition } from "../state/AppState";
 import {
   buildExplanationPrompt,
+  buildTermExpansionPrompt,
   buildOnboardingPrompt,
   buildTermExtractionPrompt,
   type OnboardingProfile,
+  type TermExpansionContext,
 } from "./promptBuilder";
 import type { DefinitionLanguage, LexAIConfig, ProviderConfig } from "./configStore";
 import { loadConfig } from "./configStore";
 
-type SupportedOperation = "termExtraction" | "onboarding" | "explanation";
+type SupportedOperation = "termExtraction" | "onboarding" | "explanation" | "deepDive";
 
 function normalizeBaseUrl(baseUrl: string | undefined, fallback: string): string {
   if (!baseUrl || baseUrl.trim().length === 0) {
@@ -22,10 +24,18 @@ function extractJsonPayload(raw: string): string {
   if (trimmed.startsWith("```") && trimmed.endsWith("```")) {
     return trimmed.replace(/^```[a-zA-Z]*\s*/, "").replace(/```$/, "").trim();
   }
+  if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+    return trimmed;
+  }
   const start = trimmed.indexOf("[");
   const end = trimmed.lastIndexOf("]");
   if (start !== -1 && end !== -1 && end > start) {
     return trimmed.slice(start, end + 1);
+  }
+  const objectStart = trimmed.indexOf("{");
+  const objectEnd = trimmed.lastIndexOf("}");
+  if (objectStart !== -1 && objectEnd !== -1 && objectEnd > objectStart) {
+    return trimmed.slice(objectStart, objectEnd + 1);
   }
   return trimmed;
 }
@@ -182,6 +192,7 @@ const OPERATION_LABELS: Record<SupportedOperation, string> = {
   termExtraction: "Document Term Extraction",
   onboarding: "Conversational Onboarding",
   explanation: "AI Assisted Definitions",
+  deepDive: "Term Deep Dive",
 };
 
 function buildSystemPrompt(operation: SupportedOperation, language: DefinitionLanguage): string {
@@ -195,6 +206,8 @@ function buildSystemPrompt(operation: SupportedOperation, language: DefinitionLa
       return `You are LexAI's onboarding mentor. Use the provided learner context to curate a starter glossary tailored to their needs. Always respond with a minified JSON array. ${languageNote}`;
     case "explanation":
       return `You are a domain tutor helping learners understand complex passages. Provide short, high-impact explanations with optional examples. ${languageNote}`;
+    case "deepDive":
+      return `You are an AI language tutor who expands a learner's understanding of a term through contextual knowledge, associations, and rich examples. Always return strictly valid JSON following the requested schema. ${languageNote}`;
     case "termExtraction":
     default:
       return `You are a multilingual terminology extraction assistant for LexAI. Respond only with minified JSON arrays of objects with 'term' and 'definition' keys. ${languageNote}`;
@@ -229,26 +242,84 @@ function parseTermDefinitions(jsonString: string): TermDefinition[] {
     .filter((entry) => entry.term.length > 0 && entry.definition.length > 0);
 }
 
-async function runTermOperation(
+type TermExpansionResult = {
+  example_sentences: string[];
+  usage_scenario: string;
+  related_terms: Array<{ term: string; relationship: string }>;
+};
+
+function parseExpansionResult(jsonString: string): TermExpansionResult {
+  const parsed = JSON.parse(jsonString) as Partial<TermExpansionResult>;
+
+  const exampleSentences = Array.isArray(parsed.example_sentences)
+    ? parsed.example_sentences
+        .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+        .filter((entry) => entry.length > 0)
+    : [];
+
+  const usageScenario = typeof parsed.usage_scenario === "string" ? parsed.usage_scenario.trim() : "";
+
+  const relatedTerms = Array.isArray(parsed.related_terms)
+    ? parsed.related_terms
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") {
+            return null;
+          }
+          const term = typeof entry.term === "string" ? entry.term.trim() : "";
+          const relationship = typeof entry.relationship === "string" ? entry.relationship.trim() : "";
+          if (!term || !relationship) {
+            return null;
+          }
+          return { term, relationship };
+        })
+        .filter((entry): entry is { term: string; relationship: string } => entry !== null)
+    : [];
+
+  if (exampleSentences.length === 0 || !usageScenario || relatedTerms.length === 0) {
+    throw new Error("The language model returned incomplete expansion data.");
+  }
+
+  return {
+    example_sentences: exampleSentences.slice(0, 5),
+    usage_scenario: usageScenario,
+    related_terms: relatedTerms.slice(0, 6),
+  };
+}
+
+async function runRawOperation(
   config: LexAIConfig,
   operation: SupportedOperation,
   prompt: string,
-): Promise<TermDefinition[]> {
+  expectJson: boolean,
+): Promise<string> {
   const { provider, model } = ensureOperation(config, operation);
   const systemPrompt = buildSystemPrompt(operation, config.preferences.definitionLanguage);
 
-  let jsonString: string;
+  let response: string;
   switch (provider.vendor) {
     case "openai":
-      jsonString = await callOpenAI(provider, model, systemPrompt, prompt);
+      response = await callOpenAI(provider, model, systemPrompt, prompt, expectJson);
       break;
     case "gemini":
-      jsonString = await callGemini(provider, model, systemPrompt, prompt);
+      response = await callGemini(provider, model, systemPrompt, prompt, expectJson);
       break;
     default:
       throw new Error(`Unsupported provider vendor: ${provider.vendor}`);
   }
 
+  const trimmed = response.trim();
+  if (!trimmed) {
+    throw new Error("The language model returned an empty response.");
+  }
+  return trimmed;
+}
+
+async function runTermOperation(
+  config: LexAIConfig,
+  operation: SupportedOperation,
+  prompt: string,
+): Promise<TermDefinition[]> {
+  const jsonString = await runRawOperation(config, operation, prompt, true);
   const terms = parseTermDefinitions(jsonString);
   if (terms.length === 0) {
     throw new Error("No terms returned by the language model.");
@@ -261,26 +332,7 @@ async function runTextOperation(
   operation: SupportedOperation,
   prompt: string,
 ): Promise<string> {
-  const { provider, model } = ensureOperation(config, operation);
-  const systemPrompt = buildSystemPrompt(operation, config.preferences.definitionLanguage);
-
-  let response: string;
-  switch (provider.vendor) {
-    case "openai":
-      response = await callOpenAI(provider, model, systemPrompt, prompt, false);
-      break;
-    case "gemini":
-      response = await callGemini(provider, model, systemPrompt, prompt, false);
-      break;
-    default:
-      throw new Error(`Unsupported provider vendor: ${provider.vendor}`);
-  }
-
-  const cleaned = response.trim();
-  if (!cleaned) {
-    throw new Error("The language model returned an empty response.");
-  }
-  return cleaned;
+  return runRawOperation(config, operation, prompt, false);
 }
 
 export async function extractDocumentTerms(documentText: string): Promise<TermDefinition[]> {
@@ -320,4 +372,17 @@ export async function explainSelection(snippet: string): Promise<string> {
 
   const prompt = buildExplanationPrompt(trimmed, config.preferences.definitionLanguage);
   return runTextOperation(config, "explanation", prompt);
+}
+
+export type { TermExpansionResult };
+
+export async function expandTerm(context: TermExpansionContext): Promise<TermExpansionResult> {
+  const config = await loadConfig();
+  if (config.providers.length === 0) {
+    throw new Error("No AI providers configured. Add one in Settings before expanding terminology.");
+  }
+
+  const prompt = buildTermExpansionPrompt(context, config.preferences.definitionLanguage);
+  const jsonString = await runRawOperation(config, "deepDive", prompt, true);
+  return parseExpansionResult(jsonString);
 }

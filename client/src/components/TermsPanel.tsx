@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { TermDefinition, useAppState } from "../state/AppState";
+import { useLocale } from "../state/LocaleContext";
 
 type StoredTerm = {
   id: number;
@@ -15,6 +16,8 @@ type StoredTerm = {
 export function TermsPanel() {
   const { documentId, terms, selectedTerm, setSelectedTerm, setContexts, refreshGlobalTerms } =
     useAppState();
+  const language = useLocale();
+  const isChinese = language === "zh-CN";
   const [loadingTerm, setLoadingTerm] = useState<string | null>(null);
   const [savingTerm, setSavingTerm] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +35,7 @@ export function TermsPanel() {
   const fetchContexts = useCallback(
     async (term: string) => {
       if (!documentId) {
-        setError("Upload a document before requesting contexts.");
+        setError(isChinese ? "请先上传并选中文档，再查看语境。" : "Upload a document before requesting contexts.");
         return;
       }
 
@@ -54,7 +57,7 @@ export function TermsPanel() {
         setLoadingTerm(null);
       }
     },
-    [documentId, setContexts, setSelectedTerm],
+    [documentId, isChinese, setContexts, setSelectedTerm],
   );
 
   const saveTerm = useCallback(
@@ -74,7 +77,11 @@ export function TermsPanel() {
 
         if (existing) {
           setDuplicateCandidate({ id: existing.id, entry });
-          setInfoMessage(`Term ${trimmedTerm} already exists. You can update its definition below.`);
+        setInfoMessage(
+          isChinese
+            ? `术语 ${trimmedTerm} 已存在，可在下方更新定义。`
+            : `Term ${trimmedTerm} already exists. You can update its definition below.`,
+        );
           return;
         }
 
@@ -83,7 +90,11 @@ export function TermsPanel() {
           definition: entry.definition,
           definition_cn: entry.definition_cn ?? null,
         });
-        setInfoMessage(`Saved term ${trimmedTerm} to the global database.`);
+        setInfoMessage(
+          isChinese
+            ? `已将术语 ${trimmedTerm} 保存到全局术语库。`
+            : `Saved term ${trimmedTerm} to the global database.`,
+        );
         await refreshGlobalTerms();
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
@@ -92,7 +103,7 @@ export function TermsPanel() {
         setSavingTerm(null);
       }
     },
-    [refreshGlobalTerms],
+    [isChinese, refreshGlobalTerms],
   );
 
   const updateTerm = useCallback(
@@ -107,7 +118,11 @@ export function TermsPanel() {
           definition: entry.definition,
           definition_cn: entry.definition_cn ?? null,
         });
-        setInfoMessage(`Updated definition for ${entry.term}.`);
+        setInfoMessage(
+          isChinese
+            ? `已更新 ${entry.term} 的释义。`
+            : `Updated definition for ${entry.term}.`,
+        );
         setDuplicateCandidate(null);
         await refreshGlobalTerms();
       } catch (err) {
@@ -117,21 +132,25 @@ export function TermsPanel() {
         setSavingTerm(null);
       }
     },
-    [refreshGlobalTerms],
+    [isChinese, refreshGlobalTerms],
   );
 
   return (
     <section className="panel">
       <header className="panel__header">
-        <h2>Extracted Terms</h2>
+        <h2>{isChinese ? "提取的术语" : "Extracted Terms"}</h2>
       </header>
       {error && <p className="panel__status error">{error}</p>}
       {infoMessage && <p className="panel__status success">{infoMessage}</p>}
       {loadingTerm && !error && (
-        <p className="panel__status">Searching contexts for "{loadingTerm}"...</p>
+        <p className="panel__status">
+          {isChinese
+            ? `正在为 “${loadingTerm}” 搜集语境…`
+            : `Searching contexts for "${loadingTerm}"...`}
+        </p>
       )}
       <ul className="panel__list terms-list">
-        {terms.length === 0 && <li>No terms extracted yet.</li>}
+        {terms.length === 0 && <li>{isChinese ? "尚未提取任何术语。" : "No terms extracted yet."}</li>}
         {terms.map((entry) => {
           const isActive = entry.term === selectedTerm;
           const isLoading = loadingTerm === entry.term;
@@ -147,9 +166,11 @@ export function TermsPanel() {
                 className="term-button"
                 onClick={() => fetchContexts(entry.term)}
                 disabled={isLoading}
+                aria-label={isChinese ? `查看 ${entry.term} 的语境` : `View contexts for ${entry.term}`}
               >
                 <span className="term-button__term">{entry.term}</span>
                 <span className="term-button__definition">{entry.definition}</span>
+                <span className="term-button__cta">{isChinese ? "查看语境" : "View contexts"}</span>
               </button>
               <button
                 type="button"
@@ -160,12 +181,26 @@ export function TermsPanel() {
                     : saveTerm(entry)
                 }
                 disabled={isSaving}
-                aria-label={duplicateActive ? `Update ${entry.term}` : `Save ${entry.term}`}
+                aria-label={
+                  duplicateActive
+                    ? isChinese
+                      ? `更新 ${entry.term}`
+                      : `Update ${entry.term}`
+                    : isChinese
+                    ? `保存 ${entry.term}`
+                    : `Save ${entry.term}`
+                }
               >
                 {isSaving
-                  ? "Saving..."
+                  ? isChinese
+                    ? "正在保存…"
+                    : "Saving..."
                   : duplicateActive
-                  ? "Update definition"
+                  ? isChinese
+                    ? "更新释义"
+                    : "Update definition"
+                  : isChinese
+                  ? "保存"
                   : "Save"}
               </button>
             </li>

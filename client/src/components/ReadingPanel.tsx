@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { extractDocumentTerms, explainSelection } from "../lib/llmClient";
 import { useAppState } from "../state/AppState";
+import { useLocale } from "../state/LocaleContext";
 
 export function ReadingPanel() {
   const { documentId, documentText, setTerms, setContexts, setSelectedTerm, globalTerms } =
     useAppState();
+  const language = useLocale();
+  const isChinese = language === "zh-CN";
   const [renderedHtml, setRenderedHtml] = useState<string>("");
   const [extracting, setExtracting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +25,11 @@ export function ReadingPanel() {
 
   const handleExtract = useCallback(async () => {
     if (isDisabled) {
-      setError("Upload and select a document before extracting terms.");
+      setError(
+        isChinese
+          ? "请先上传并选中文档，再提取术语。"
+          : "Upload and select a document before extracting terms.",
+      );
       return;
     }
 
@@ -36,7 +43,11 @@ export function ReadingPanel() {
       setTerms(terms);
       setContexts([]);
       setSelectedTerm(null);
-      setInfoMessage(`Extracted ${terms.length} terms.`);
+      setInfoMessage(
+        isChinese
+          ? `已提取 ${terms.length} 个术语。`
+          : `Extracted ${terms.length} terms.`,
+      );
       setSelection(null);
       setExplanation(null);
       setRenderedHtml("");
@@ -47,7 +58,7 @@ export function ReadingPanel() {
     } finally {
       setExtracting(false);
     }
-  }, [documentText, isDisabled, setContexts, setSelectedTerm, setTerms]);
+  }, [documentText, isChinese, isDisabled, setContexts, setSelectedTerm, setTerms]);
 
   const handleSelectionChange = useCallback(
     (event: React.SyntheticEvent<HTMLTextAreaElement>) => {
@@ -89,7 +100,11 @@ export function ReadingPanel() {
       return;
     }
     if (selection.text.length < 12) {
-      setExplainError("Select a slightly longer passage (at least 12 characters).");
+      setExplainError(
+        isChinese
+          ? "请选中更长的片段（至少 12 个字符）。"
+          : "Select a slightly longer passage (at least 12 characters).",
+      );
       return;
     }
 
@@ -105,7 +120,7 @@ export function ReadingPanel() {
     } finally {
       setExplaining(false);
     }
-  }, [selection]);
+  }, [isChinese, selection]);
 
   const handleClearAssist = useCallback(() => {
     setSelection(null);
@@ -115,7 +130,8 @@ export function ReadingPanel() {
 
   const highlightedHtml = useMemo(() => {
     if (!documentText.trim()) {
-      return "<p class=\"reading-panel__placeholder\">No document selected.</p>";
+      const placeholder = isChinese ? "尚未选中文档。" : "No document selected.";
+      return `<p class="reading-panel__placeholder">${placeholder}</p>`;
     }
 
     let working = documentText;
@@ -149,7 +165,7 @@ export function ReadingPanel() {
     });
 
     return working.replace(/\n/g, "<br />");
-  }, [documentText, globalTerms]);
+  }, [documentText, globalTerms, isChinese]);
 
   useEffect(() => {
     setRenderedHtml(highlightedHtml);
@@ -158,14 +174,20 @@ export function ReadingPanel() {
   return (
     <section className="panel reading-panel">
       <header className="panel__header">
-        <h2>Reading View</h2>
+        <h2>{isChinese ? "阅读视图" : "Reading View"}</h2>
         <button
           type="button"
           onClick={handleExtract}
           disabled={extracting || isDisabled}
           aria-busy={extracting}
         >
-          {extracting ? "Extracting…" : "Extract Terms"}
+          {extracting
+            ? isChinese
+              ? "正在提取…"
+              : "Extracting…"
+            : isChinese
+            ? "提取术语"
+            : "Extract Terms"}
         </button>
       </header>
       {error && <p className="panel__status error">{error}</p>}
@@ -180,7 +202,7 @@ export function ReadingPanel() {
       />
       <div
         className="reading-panel__text"
-        aria-label="Document preview"
+        aria-label={isChinese ? "文档预览" : "Document preview"}
         dangerouslySetInnerHTML={{ __html: renderedHtml }}
         onMouseOver={(event) => {
           const target = event.target as HTMLElement;
@@ -216,9 +238,9 @@ export function ReadingPanel() {
       {selection && (
         <div className="reading-panel__assist">
           <div className="reading-panel__assist-header">
-            <h3>Selected passage</h3>
+            <h3>{isChinese ? "选中片段" : "Selected passage"}</h3>
             <button type="button" className="pill-button" onClick={handleClearAssist} disabled={explaining}>
-              Clear selection
+              {isChinese ? "清除选区" : "Clear selection"}
             </button>
           </div>
           <p className="reading-panel__snippet">{selection.display}</p>
@@ -230,7 +252,13 @@ export function ReadingPanel() {
               disabled={explaining}
               aria-busy={explaining}
             >
-              {explaining ? "Generating explanation…" : "Explain selection"}
+              {explaining
+                ? isChinese
+                  ? "正在生成讲解…"
+                  : "Generating explanation…"
+                : isChinese
+                ? "解释选中内容"
+                : "Explain selection"}
             </button>
           </div>
           {explainError && <p className="panel__status error">{explainError}</p>}
