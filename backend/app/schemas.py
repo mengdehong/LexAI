@@ -5,6 +5,7 @@ class DocumentUploadResponse(BaseModel):
     document_id: str
     status: str
     message: str
+    extracted_text: str | None = None
 
 
 class SearchResult(BaseModel):

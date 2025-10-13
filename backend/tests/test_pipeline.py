@@ -181,6 +181,7 @@ def test_upload_and_search_pipeline(api_client: TestClient, sample_pdf: Path) ->
     assert upload_response.status_code == 201
     upload_payload = upload_response.json()
     assert upload_payload["status"] == "processed"
+    assert upload_payload["extracted_text"] == "LexAI test term appears in this document chunk for verification."
 
     document_id = upload_payload["document_id"]
 

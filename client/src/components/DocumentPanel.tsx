@@ -3,15 +3,6 @@ import { useAppState } from "../state/AppState";
 
 type UploadStatus = "idle" | "uploading" | "success" | "error";
 
-async function readFileContent(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
-    reader.readAsText(file);
-  });
-}
-
 export function DocumentPanel() {
   const { documentId, documents, setDocument, selectDocument } = useAppState();
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
@@ -26,16 +17,6 @@ export function DocumentPanel() {
 
       setUploadStatus("uploading");
       setMessage(null);
-
-      let fileText = "";
-      let previewFallback = false;
-
-      try {
-        fileText = await readFileContent(file);
-      } catch (previewErr) {
-        previewFallback = true;
-        fileText = "[Preview not available for this file type. Preview is limited to plain-text formats.]";
-      }
 
       try {
         const formData = new FormData();
@@ -74,20 +55,32 @@ export function DocumentPanel() {
           throw new Error(detailMessage);
         }
 
-        const payload: { document_id?: string; status?: string; message?: string } =
+        const payload: {
+          document_id?: string;
+          status?: string;
+          message?: string;
+          extracted_text?: string | null;
+        } =
           await response.json();
 
         if (!payload.document_id) {
           throw new Error("Upload succeeded but document_id missing from response");
         }
 
-        setDocument({ id: payload.document_id, text: fileText, name: file.name });
+        let resolvedText = typeof payload.extracted_text === "string" ? payload.extracted_text : "";
+
+        if (!resolvedText.trim()) {
+          resolvedText = "[Document text unavailable. Extraction returned empty result.]";
+        }
+
+        setDocument({ id: payload.document_id, text: resolvedText, name: file.name });
         setUploadStatus("success");
-        setMessage(
-          previewFallback
-            ? "Upload completed. Preview not available for this file type; use extracted terms instead."
-            : payload.message ?? "Upload completed",
-        );
+        setMessage(payload.message ?? "Upload completed");
+        if (resolvedText.startsWith("[Document text unavailable.")) {
+          setMessage(
+            "Upload completed, but the document could not be parsed for preview. You can still retry with another file.",
+          );
+        }
         event.target.value = "";
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);

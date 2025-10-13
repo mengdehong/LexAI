@@ -46,8 +46,10 @@ async def upload_document(
 
     temp_path.write_bytes(contents)
 
+    extracted_text: str | None = None
+
     try:
-        await process_and_embed_document(str(temp_path), document_id)
+        extracted_text = await process_and_embed_document(str(temp_path), document_id)
     except DocumentProcessingError as exc:
         logger.warning("Document processing failed", exc_info=exc)
         raise HTTPException(
@@ -64,6 +66,7 @@ async def upload_document(
         document_id=document_id,
         status="processed",
         message="Document processed successfully",
+        extracted_text=extracted_text,
     )
 
 

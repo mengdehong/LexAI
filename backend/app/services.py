@@ -116,7 +116,7 @@ def ensure_collection(client: QdrantClient, vector_size: int) -> None:
         )
 
 
-async def process_and_embed_document(file_path: str, document_id: str) -> None:
+async def process_and_embed_document(file_path: str, document_id: str) -> str:
     settings = get_settings()
 
     try:
@@ -171,7 +171,7 @@ async def process_and_embed_document(file_path: str, document_id: str) -> None:
             vector=vector,
             payload={"document_id": document_id, "chunk_text": chunk_text},
         )
-        for idx, (vector, chunk_text) in enumerate(zip(vectors, chunks))
+        for vector, chunk_text in zip(vectors, chunks)
     ]
 
     await asyncio.to_thread(
@@ -180,3 +180,5 @@ async def process_and_embed_document(file_path: str, document_id: str) -> None:
         points=points,
         wait=True,
     )
+
+    return text
