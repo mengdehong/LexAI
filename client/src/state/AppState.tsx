@@ -1,4 +1,5 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/tauri";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 export type UploadedDocument = {
   id: string;
@@ -13,6 +14,13 @@ export type TermDefinition = {
   definition_cn?: string | null;
 };
 
+type GlobalTerm = {
+  id: number;
+  term: string;
+  definition: string;
+  definition_cn: string | null;
+};
+
 type AppStateValue = {
   documentId: string | null;
   documentText: string;
@@ -20,11 +28,13 @@ type AppStateValue = {
   selectedTerm: string | null;
   terms: TermDefinition[];
   contexts: string[];
+  globalTerms: GlobalTerm[];
   setDocument: (payload: { id: string; text: string; name: string }) => void;
   selectDocument: (id: string) => void;
   setTerms: (terms: TermDefinition[]) => void;
   setContexts: (contexts: string[]) => void;
   setSelectedTerm: (term: string | null) => void;
+  refreshGlobalTerms: () => Promise<void>;
   reset: () => void;
 };
 
@@ -37,6 +47,20 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   const [selectedTerm, setSelectedTerm] = useState<string | null>(null);
   const [terms, setTerms] = useState<TermDefinition[]>([]);
   const [contexts, setContexts] = useState<string[]>([]);
+  const [globalTerms, setGlobalTerms] = useState<GlobalTerm[]>([]);
+
+  const refreshGlobalTerms = useCallback(async () => {
+    try {
+      const payload = await invoke<GlobalTerm[]>("get_all_terms");
+      setGlobalTerms(payload);
+    } catch (err) {
+      console.error("Failed to refresh global terms", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshGlobalTerms();
+  }, [refreshGlobalTerms]);
 
   const reset = useCallback(() => {
     setDocumentId(null);
@@ -99,11 +123,13 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       selectedTerm,
       terms,
       contexts,
+      globalTerms,
       setDocument,
       selectDocument,
       setTerms,
       setContexts,
       setSelectedTerm,
+      refreshGlobalTerms,
       reset,
     }),
     [
@@ -113,11 +139,13 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       selectedTerm,
       terms,
       contexts,
+      globalTerms,
       setDocument,
       selectDocument,
       setTerms,
       setContexts,
       setSelectedTerm,
+      refreshGlobalTerms,
       reset,
     ],
   );

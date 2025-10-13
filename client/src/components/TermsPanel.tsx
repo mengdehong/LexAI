@@ -13,7 +13,8 @@ type StoredTerm = {
 };
 
 export function TermsPanel() {
-  const { documentId, terms, selectedTerm, setSelectedTerm, setContexts } = useAppState();
+  const { documentId, terms, selectedTerm, setSelectedTerm, setContexts, refreshGlobalTerms } =
+    useAppState();
   const [loadingTerm, setLoadingTerm] = useState<string | null>(null);
   const [savingTerm, setSavingTerm] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -83,6 +84,7 @@ export function TermsPanel() {
           definition_cn: entry.definition_cn ?? null,
         });
         setInfoMessage(`Saved term ${trimmedTerm} to the global database.`);
+        await refreshGlobalTerms();
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         setError(detail);
@@ -90,7 +92,7 @@ export function TermsPanel() {
         setSavingTerm(null);
       }
     },
-    [],
+    [refreshGlobalTerms],
   );
 
   const updateTerm = useCallback(
@@ -107,6 +109,7 @@ export function TermsPanel() {
         });
         setInfoMessage(`Updated definition for ${entry.term}.`);
         setDuplicateCandidate(null);
+        await refreshGlobalTerms();
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         setError(detail);
@@ -114,7 +117,7 @@ export function TermsPanel() {
         setSavingTerm(null);
       }
     },
-    [],
+    [refreshGlobalTerms],
   );
 
   return (

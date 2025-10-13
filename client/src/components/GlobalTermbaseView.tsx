@@ -1,6 +1,7 @@
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
+import { useAppState } from "../state/AppState";
 
 type StoredTerm = {
   id: number;
@@ -21,6 +22,7 @@ type ViewMode = "table" | "review";
 const REVIEW_BATCH_SIZE = 12;
 
 export function GlobalTermbaseView() {
+  const { refreshGlobalTerms } = useAppState();
   const [terms, setTerms] = useState<StoredTerm[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,13 +46,16 @@ export function GlobalTermbaseView() {
     try {
       const payload = await invoke<StoredTerm[]>("get_all_terms");
       setTerms(payload);
+      refreshGlobalTerms().catch(() => {
+        /* already logged in provider */
+      });
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       setError(detail);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [refreshGlobalTerms]);
 
   const loadReviewQueue = useCallback(async () => {
     setReviewLoading(true);
@@ -164,6 +169,9 @@ export function GlobalTermbaseView() {
         );
         setToast({ kind: "success", message: `Updated ${trimmedTerm}.` });
         cancelEdit();
+        refreshGlobalTerms().catch(() => {
+          /* ignore */
+        });
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         setError(detail);
@@ -171,7 +179,7 @@ export function GlobalTermbaseView() {
         setSavingId(null);
       }
     },
-    [cancelEdit, draft.definition, draft.definition_cn, draft.term],
+    [cancelEdit, draft.definition, draft.definition_cn, draft.term, refreshGlobalTerms],
   );
 
   const deleteTerm = useCallback(
@@ -182,6 +190,9 @@ export function GlobalTermbaseView() {
         await invoke("delete_term", { id });
         setTerms((prev) => prev.filter((entry) => entry.id !== id));
         setToast({ kind: "success", message: "Term deleted." });
+        refreshGlobalTerms().catch(() => {
+          /* ignore */
+        });
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         setError(detail);
@@ -189,7 +200,7 @@ export function GlobalTermbaseView() {
         setSavingId(null);
       }
     },
-    [],
+    [refreshGlobalTerms],
   );
 
   const handleExport = useCallback(async () => {

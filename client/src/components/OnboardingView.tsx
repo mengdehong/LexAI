@@ -4,6 +4,7 @@ import type { DefinitionLanguage } from "../lib/configStore";
 import { loadConfig, markOnboardingComplete } from "../lib/configStore";
 import { generateOnboardingTerms } from "../lib/llmClient";
 import type { OnboardingProfile } from "../lib/promptBuilder";
+import { useAppState } from "../state/AppState";
 
 type ChatMessage = {
   id: string;
@@ -64,6 +65,7 @@ export function OnboardingView({
   onRequestSettings,
   onComplete,
 }: OnboardingViewProps) {
+  const { refreshGlobalTerms } = useAppState();
   const [messages, setMessages] = useState<ChatMessage[]>([
     createMessage(
       "assistant",
@@ -303,6 +305,7 @@ export function OnboardingView({
           });
         }),
       );
+      await refreshGlobalTerms();
 
       await markOnboardingComplete();
 
@@ -322,7 +325,7 @@ export function OnboardingView({
       setProgress("idle");
       setBusy(false);
     }
-  }, [busy, domain, goals, hasOnboardingMapping, language, onComplete, proficiency]);
+  }, [busy, domain, goals, hasOnboardingMapping, language, onComplete, proficiency, refreshGlobalTerms]);
 
   const renderForm = () => {
     if (step === 0) {
