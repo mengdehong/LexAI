@@ -1,5 +1,7 @@
 use std::{error::Error, fs, path::Path};
 
+use chrono::Utc;
+
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sqlx::{
@@ -20,6 +22,8 @@ struct Term {
     id: i64,
     term: String,
     definition: String,
+    review_stage: i64,
+    last_reviewed_at: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -106,7 +110,9 @@ async fn add_term(
 
 #[tauri::command]
 async fn get_all_terms(state: State<'_, AppState>) -> Result<Vec<Term>, String> {
-    let records = sqlx::query("SELECT id, term, COALESCE(definition, '') AS definition FROM terms ORDER BY created_at DESC")
+    let records = sqlx::query(
+        "SELECT id, term, COALESCE(definition, '') AS definition, review_stage, last_reviewed_at FROM terms ORDER BY created_at DESC",
+    )
         .fetch_all(&state.pool)
         .await
         .map_err(|err| err.to_string())?;
@@ -117,6 +123,8 @@ async fn get_all_terms(state: State<'_, AppState>) -> Result<Vec<Term>, String> 
             id: row.get("id"),
             term: row.get("term"),
             definition: row.get("definition"),
+            review_stage: row.get("review_stage"),
+            last_reviewed_at: row.get("last_reviewed_at"),
         })
         .collect();
 
@@ -129,7 +137,7 @@ async fn find_term_by_name(
     state: State<'_, AppState>,
 ) -> Result<Option<Term>, String> {
     let record = sqlx::query(
-        "SELECT id, term, COALESCE(definition, '') AS definition FROM terms WHERE lower(term) = lower(?) LIMIT 1",
+        "SELECT id, term, COALESCE(definition, '') AS definition, review_stage, last_reviewed_at FROM terms WHERE lower(term) = lower(?) LIMIT 1",
     )
     .bind(&term)
     .fetch_optional(&state.pool)
@@ -140,6 +148,8 @@ async fn find_term_by_name(
         id: row.get("id"),
         term: row.get("term"),
         definition: row.get("definition"),
+        review_stage: row.get("review_stage"),
+        last_reviewed_at: row.get("last_reviewed_at"),
     });
 
     Ok(result)
@@ -236,6 +246,66 @@ async fn export_terms_csv(
     Ok(())
 }
 
+#[tauri::command]
+async fn get_review_terms(
+    state: State<'_, AppState>,
+    limit: Option<i64>,
+) -> Result<Vec<Term>, String> {
+    let limit = limit.unwrap_or(12).clamp(1, 100);
+
+    let records = sqlx::query(
+        "SELECT id, term, COALESCE(definition, '') AS definition, review_stage, last_reviewed_at FROM terms ORDER BY review_stage ASC, COALESCE(last_reviewed_at, '') ASC, created_at ASC LIMIT ?",
+    )
+    .bind(limit)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|err| err.to_string())?;
+
+    let terms = records
+        .into_iter()
+        .map(|row| Term {
+            id: row.get("id"),
+            term: row.get("term"),
+            definition: row.get("definition"),
+            review_stage: row.get("review_stage"),
+            last_reviewed_at: row.get("last_reviewed_at"),
+        })
+        .collect();
+
+    Ok(terms)
+}
+
+#[tauri::command]
+async fn submit_review_result(
+    id: i64,
+    known: bool,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let record = sqlx::query("SELECT review_stage FROM terms WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    let Some(row) = record else {
+        return Err("Term not found".to_string());
+    };
+
+    let current_stage: i64 = row.get("review_stage");
+    let next_stage = if known { (current_stage + 1).min(5) } else { 0 };
+    let timestamp = Utc::now().to_rfc3339();
+
+    sqlx::query("UPDATE terms SET review_stage = ?, last_reviewed_at = ? WHERE id = ?")
+        .bind(next_stage)
+        .bind(timestamp)
+        .bind(id)
+        .execute(&state.pool)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    Ok(())
+}
+
 async fn init_database(db_path: &Path) -> Result<SqlitePool, sqlx::Error> {
     let connect_options = SqliteConnectOptions::new()
         .filename(db_path)
@@ -280,7 +350,9 @@ pub fn run() {
             find_term_by_name,
             delete_term,
             update_term,
-            export_terms_csv
+            export_terms_csv,
+            get_review_terms,
+            submit_review_result
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

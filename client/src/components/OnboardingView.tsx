@@ -22,6 +22,8 @@ type StoredTerm = {
   id: number;
   term: string;
   definition: string;
+  review_stage: number;
+  last_reviewed_at: string | null;
 };
 
 const PROFICIENCY_OPTIONS: Array<{ label: string; value: OnboardingProfile["proficiency"]; helper: string }>= [

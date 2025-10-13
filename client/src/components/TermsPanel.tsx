@@ -7,6 +7,8 @@ type StoredTerm = {
   id: number;
   term: string;
   definition: string;
+  review_stage: number;
+  last_reviewed_at: string | null;
 };
 
 export function TermsPanel() {

@@ -1,0 +1,2 @@
+ALTER TABLE terms ADD COLUMN review_stage INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE terms ADD COLUMN last_reviewed_at TEXT;
