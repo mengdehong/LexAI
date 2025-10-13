@@ -260,7 +260,7 @@ async fn get_review_terms(
     state: State<'_, AppState>,
     limit: Option<i64>,
 ) -> Result<Vec<Term>, String> {
-    let limit = limit.unwrap_or(12).clamp(1, 100);
+    let limit = limit.unwrap_or(20).clamp(1, 100);
 
     let records = sqlx::query(
         "SELECT id, term, COALESCE(definition, '') AS definition, definition_cn, review_stage, last_reviewed_at FROM terms ORDER BY review_stage ASC, COALESCE(last_reviewed_at, '') ASC, created_at ASC LIMIT ?",
@@ -302,7 +302,11 @@ async fn submit_review_result(
     };
 
     let current_stage: i64 = row.get("review_stage");
-    let next_stage = if known { (current_stage + 1).min(5) } else { 0 };
+    let next_stage = if known {
+        current_stage.saturating_add(1).min(5)
+    } else {
+        current_stage.saturating_sub(1)
+    };
     let timestamp = Utc::now().to_rfc3339();
 
     sqlx::query("UPDATE terms SET review_stage = ?, last_reviewed_at = ? WHERE id = ?")

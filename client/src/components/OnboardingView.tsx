@@ -12,11 +12,15 @@ type ChatMessage = {
   content: string;
 };
 
+type OnboardingMode = "initial" | "generator";
+
 type OnboardingViewProps = {
   language: DefinitionLanguage;
   hasOnboardingMapping: boolean;
   onRequestSettings: () => void;
   onComplete: () => void;
+  mode?: OnboardingMode;
+  onDismiss?: () => void;
 };
 
 type StoredTerm = {
@@ -51,6 +55,51 @@ const PROGRESS_COPY: Record<DefinitionLanguage, Record<ActiveProgress, string>> 
   },
 };
 
+const INITIAL_PROMPTS: Record<OnboardingMode, Record<DefinitionLanguage, string>> = {
+  initial: {
+    en: "Welcome to LexAI! To personalise your starter glossary, tell me about the domain you work or study in.",
+    "zh-CN": "欢迎来到 LexAI！为了更好地帮助你，我想先了解一些背景。请告诉我你所专注的专业领域。",
+  },
+  generator: {
+    en: "Ready to expand your knowledge network? Start by telling me which domain you want the AI to focus on.",
+    "zh-CN": "准备扩充你的术语库了吗？先告诉我这次希望聚焦的专业领域吧。",
+  },
+};
+
+const HEADER_COPY: Record<OnboardingMode, Record<DefinitionLanguage, { title: string; subtitle: string }>> = {
+  initial: {
+    en: {
+      title: "LexAI Onboarding",
+      subtitle: "Spend a minute with LexAI to generate a personalised starter glossary.",
+    },
+    "zh-CN": {
+      title: "LexAI Onboarding",
+      subtitle: "花几分钟，通过 AI 对话生成专属于你的初始术语库。",
+    },
+  },
+  generator: {
+    en: {
+      title: "AI Glossary Generator",
+      subtitle: "Answer a few quick questions and let LexAI craft new terms for your global termbase.",
+    },
+    "zh-CN": {
+      title: "AI 术语生成器",
+      subtitle: "回答几个小问题，LexAI 即可为你的全局术语库生成全新词条。",
+    },
+  },
+};
+
+const SUCCESS_COPY: Record<OnboardingMode, Record<DefinitionLanguage, string>> = {
+  initial: {
+    en: "Starter glossary created! Redirecting you to the global termbase.",
+    "zh-CN": "初始术语库已生成，正在跳转至全局术语库。",
+  },
+  generator: {
+    en: "AI-generated terms merged into your global termbase.",
+    "zh-CN": "AI 生成的术语已合并进你的全局术语库。",
+  },
+};
+
 function createMessage(role: ChatMessage["role"], content: string): ChatMessage {
   const id =
     typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -64,15 +113,13 @@ export function OnboardingView({
   hasOnboardingMapping,
   onRequestSettings,
   onComplete,
+  mode = "initial",
+  onDismiss,
 }: OnboardingViewProps) {
   const { refreshGlobalTerms } = useAppState();
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    createMessage(
-      "assistant",
-      language === "zh-CN"
-        ? "欢迎来到 LexAI！为了更好地帮助你，我想先了解一些背景。请告诉我你所专注的专业领域。"
-        : "Welcome to LexAI! To personalise your starter glossary, tell me about the domain you work or study in.",
-    ),
+  const initialAssistantMessage = useMemo(() => INITIAL_PROMPTS[mode][language], [language, mode]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() => [
+    createMessage("assistant", initialAssistantMessage),
   ]);
   const [domain, setDomain] = useState("");
   const [proficiency, setProficiency] = useState<OnboardingProfile["proficiency"]>("intermediate");
@@ -84,6 +131,31 @@ export function OnboardingView({
   const [progress, setProgress] = useState<ProgressPhase>("idle");
   const [modelHint, setModelHint] = useState<string | null>(null);
   const [currentModelLabel, setCurrentModelLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMessages([createMessage("assistant", initialAssistantMessage)]);
+    setDomain("");
+    setProficiency("intermediate");
+    setGoals("");
+    setStep(0);
+    setBusy(false);
+    setError(null);
+    setSuccessMessage(null);
+    setProgress("idle");
+    setModelHint(null);
+    setCurrentModelLabel(null);
+  }, [initialAssistantMessage]);
+
+  useEffect(() => {
+    if (mode !== "generator") {
+      return;
+    }
+    const original = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = original;
+    };
+  }, [mode]);
 
   const canSubmit = useMemo(() => {
     if (!hasOnboardingMapping) {
@@ -307,13 +379,11 @@ export function OnboardingView({
       );
       await refreshGlobalTerms();
 
-      await markOnboardingComplete();
+      if (mode === "initial") {
+        await markOnboardingComplete();
+      }
 
-      setSuccessMessage(
-        language === "zh-CN"
-          ? "初始术语库已生成，正在跳转至全局术语库。"
-          : "Starter glossary created! Redirecting you to the global termbase.",
-      );
+      setSuccessMessage(SUCCESS_COPY[mode][language]);
 
       setTimeout(() => {
         onComplete();
@@ -325,7 +395,7 @@ export function OnboardingView({
       setProgress("idle");
       setBusy(false);
     }
-  }, [busy, domain, goals, hasOnboardingMapping, language, onComplete, proficiency, refreshGlobalTerms]);
+  }, [busy, domain, goals, hasOnboardingMapping, language, mode, onComplete, proficiency, refreshGlobalTerms]);
 
   const renderForm = () => {
     if (step === 0) {
@@ -433,23 +503,28 @@ export function OnboardingView({
     );
   };
 
+  const headerCopy = HEADER_COPY[mode][language];
+
   return (
     <div className="onboarding-overlay" role="dialog" aria-modal="true">
       <div className="onboarding-shell">
         <header className="onboarding-header">
           <div>
-            <h1>LexAI Onboarding</h1>
-            <p>
-              {language === "zh-CN"
-                ? "花几分钟，通过 AI 对话生成专属于你的初始术语库。"
-                : "Spend a minute with LexAI to generate a personalised starter glossary."}
-            </p>
+            <h1>{headerCopy.title}</h1>
+            <p>{headerCopy.subtitle}</p>
           </div>
-          {!hasOnboardingMapping && (
-            <button type="button" onClick={onRequestSettings} className="onboarding-secondary">
-              {language === "zh-CN" ? "前往设置 provider" : "Configure providers"}
-            </button>
-          )}
+          <div className="onboarding-header__actions">
+            {mode === "generator" && onDismiss && (
+              <button type="button" onClick={onDismiss} className="onboarding-secondary">
+                {language === "zh-CN" ? "退出" : "Close"}
+              </button>
+            )}
+            {!hasOnboardingMapping && (
+              <button type="button" onClick={onRequestSettings} className="onboarding-secondary">
+                {language === "zh-CN" ? "前往设置 provider" : "Configure providers"}
+              </button>
+            )}
+          </div>
         </header>
 
         {error && <div className="onboarding-toast error">{error}</div>}

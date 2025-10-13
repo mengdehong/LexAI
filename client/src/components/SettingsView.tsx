@@ -7,6 +7,7 @@ import type {
   ProviderVendor,
 } from "../lib/configStore";
 import { loadConfig, saveModelMapping, saveProviders, setDefinitionLanguage } from "../lib/configStore";
+import { useLocale } from "../state/LocaleContext";
 
 type ProviderFormState = {
   id: string | null;
@@ -32,6 +33,7 @@ const MAPPING_LABELS: Record<MappingOperation, string> = {
   termExtraction: "Document Term Extraction",
   explanation: "AI Assisted Definitions",
   onboarding: "Conversational Onboarding",
+  deepDive: "Term Deep Dive",
 };
 
 const LANGUAGE_LABELS: Record<DefinitionLanguage, string> = {
@@ -39,7 +41,7 @@ const LANGUAGE_LABELS: Record<DefinitionLanguage, string> = {
   "zh-CN": "简体中文",
 };
 
-const MAPPING_OPERATIONS: MappingOperation[] = ["termExtraction", "explanation", "onboarding"];
+const MAPPING_OPERATIONS: MappingOperation[] = ["termExtraction", "explanation", "onboarding", "deepDive"];
 
 function createProviderId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -48,10 +50,16 @@ function createProviderId(): string {
   return `provider-${Date.now()}`;
 }
 
-export function SettingsView() {
+type SettingsViewProps = {
+  onLanguageChange?: (language: DefinitionLanguage) => void;
+};
+
+export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [modelMapping, setModelMapping] = useState<ModelMapping>({});
   const [language, setLanguage] = useState<DefinitionLanguage>("en");
+  const uiLanguage = useLocale();
+  const isChinese = uiLanguage === "zh-CN";
   const [providerForm, setProviderForm] = useState<ProviderFormState>(INITIAL_PROVIDER_FORM);
   const [loading, setLoading] = useState(true);
   const [savingProvider, setSavingProvider] = useState(false);
@@ -63,6 +71,7 @@ export function SettingsView() {
     termExtraction: "",
     explanation: "",
     onboarding: "",
+    deepDive: "",
   });
 
   useEffect(() => {
@@ -81,6 +90,7 @@ export function SettingsView() {
           termExtraction: config.modelMapping.termExtraction?.model ?? "",
           explanation: config.modelMapping.explanation?.model ?? "",
           onboarding: config.modelMapping.onboarding?.model ?? "",
+          deepDive: config.modelMapping.deepDive?.model ?? "",
         });
       } catch (err) {
         if (active) {
@@ -147,16 +157,17 @@ export function SettingsView() {
             termExtraction: updatedMapping.termExtraction?.model ?? "",
             explanation: updatedMapping.explanation?.model ?? "",
             onboarding: updatedMapping.onboarding?.model ?? "",
+            deepDive: updatedMapping.deepDive?.model ?? "",
           }));
         }
 
-        setInfo("Provider deleted.");
+        setInfo(isChinese ? "已删除 Provider。" : "Provider deleted.");
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         setError(detail);
       }
     },
-    [modelMapping, providerForm.id, providers, resetProviderForm],
+    [isChinese, modelMapping, providerForm.id, providers, resetProviderForm],
   );
 
   const handleProviderInputChange = useCallback(
@@ -225,16 +236,21 @@ export function SettingsView() {
               termExtraction: nextMapping.termExtraction?.model ?? "",
               explanation: nextMapping.explanation?.model ?? "",
               onboarding: nextMapping.onboarding?.model ?? "",
+              deepDive: nextMapping.deepDive?.model ?? "",
             });
           }
         }
 
         if (providerForm.id) {
-          setInfo("Provider updated.");
+        setInfo(isChinese ? "Provider 已更新。" : "Provider updated.");
         } else if (assignedDefaults) {
-          setInfo("Provider added and assigned to unconfigured features.");
+          setInfo(
+            isChinese
+              ? "已添加 Provider，并自动关联到未配置的功能。"
+              : "Provider added and assigned to unconfigured features.",
+          );
         } else {
-          setInfo("Provider added.");
+          setInfo(isChinese ? "Provider 已添加。" : "Provider added.");
         }
         resetProviderForm();
       } catch (err) {
@@ -244,7 +260,7 @@ export function SettingsView() {
         setSavingProvider(false);
       }
     },
-    [modelMapping, providerForm, providers, resetProviderForm, savingProvider],
+    [isChinese, modelMapping, providerForm, providers, resetProviderForm, savingProvider],
   );
 
   const availableProviderOptions = useMemo(
@@ -270,7 +286,7 @@ export function SettingsView() {
           await saveModelMapping(nextMapping);
           setModelMapping(nextMapping);
           setModelDrafts((prev) => ({ ...prev, [operation]: "" }));
-          setInfo("Mapping updated.");
+          setInfo(isChinese ? "映射已更新。" : "Mapping updated.");
           return;
         }
 
@@ -288,7 +304,7 @@ export function SettingsView() {
         await saveModelMapping(nextMapping);
         setModelMapping(nextMapping);
         setModelDrafts((prev) => ({ ...prev, [operation]: nextMapping[operation]!.model }));
-        setInfo("Mapping updated.");
+        setInfo(isChinese ? "映射已更新。" : "Mapping updated.");
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         setError(detail);
@@ -296,7 +312,7 @@ export function SettingsView() {
         setSavingMapping(null);
       }
     },
-    [modelDrafts, modelMapping, providers],
+    [isChinese, modelDrafts, modelMapping, providers],
   );
 
   const handleMappingModelBlur = useCallback(
@@ -326,7 +342,7 @@ export function SettingsView() {
         };
         await saveModelMapping(nextMapping);
         setModelMapping(nextMapping);
-        setInfo("Mapping updated.");
+        setInfo(isChinese ? "映射已更新。" : "Mapping updated.");
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         setError(detail);
@@ -334,7 +350,7 @@ export function SettingsView() {
         setSavingMapping(null);
       }
     },
-    [modelDrafts, modelMapping],
+    [isChinese, modelDrafts, modelMapping],
   );
 
   const handleModelInputChange = useCallback(
@@ -352,7 +368,8 @@ export function SettingsView() {
       try {
         await setDefinitionLanguage(value);
         setLanguage(value);
-        setInfo("Preference saved.");
+        setInfo(isChinese ? "偏好设置已保存。" : "Preference saved.");
+        onLanguageChange?.(value);
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
         setError(detail);
@@ -360,7 +377,7 @@ export function SettingsView() {
         setSavingLanguage(false);
       }
     },
-    [],
+    [isChinese, onLanguageChange],
   );
 
   const languageOptions = useMemo(
@@ -377,9 +394,9 @@ export function SettingsView() {
     return (
       <section className="panel">
         <header className="panel__header">
-          <h2>Settings</h2>
+          <h2>{isChinese ? "设置" : "Settings"}</h2>
         </header>
-        <p className="panel__status">Loading configuration…</p>
+        <p className="panel__status">{isChinese ? "正在加载配置…" : "Loading configuration…"}</p>
       </section>
     );
   }
@@ -388,14 +405,14 @@ export function SettingsView() {
     <div className="settings-grid">
       <section className="panel">
         <header className="panel__header">
-          <h2>AI Providers</h2>
+          <h2>{isChinese ? "AI Provider 配置" : "AI Providers"}</h2>
         </header>
         {error && <p className="panel__status error">{error}</p>}
         {info && <p className="panel__status success">{info}</p>}
         <form className="provider-form" onSubmit={handleProviderSubmit}>
           <div className="provider-form__row">
             <label>
-              Name
+              {isChinese ? "名称" : "Name"}
               <input
                 type="text"
                 value={providerForm.name}
@@ -404,20 +421,20 @@ export function SettingsView() {
               />
             </label>
             <label>
-              Vendor
+              {isChinese ? "厂商" : "Vendor"}
               <select
                 value={providerForm.vendor}
                 onChange={(event) => handleProviderInputChange("vendor", event.target.value as ProviderVendor)}
               >
-                <option value="openai">OpenAI Compatible</option>
-                <option value="gemini">Google Gemini</option>
-                <option value="custom">Custom</option>
+                <option value="openai">{isChinese ? "OpenAI 兼容" : "OpenAI Compatible"}</option>
+                <option value="gemini">{isChinese ? "Google Gemini" : "Google Gemini"}</option>
+                <option value="custom">{isChinese ? "自定义" : "Custom"}</option>
               </select>
             </label>
           </div>
           <div className="provider-form__row">
             <label>
-              Default Model
+              {isChinese ? "默认模型" : "Default Model"}
               <input
                 type="text"
                 value={providerForm.defaultModel}
@@ -426,7 +443,7 @@ export function SettingsView() {
               />
             </label>
             <label>
-              Base URL (optional)
+              {isChinese ? "Base URL（可选）" : "Base URL (optional)"}
               <input
                 type="url"
                 placeholder="https://api.example.com/v1"
@@ -437,7 +454,9 @@ export function SettingsView() {
           </div>
           <div className="provider-form__row">
             <label className="provider-form__api-key">
-              API Key (optional, leave blank to use environment variables)
+              {isChinese
+                ? "API Key（可选，不填则使用环境变量）"
+                : "API Key (optional, leave blank to use environment variables)"}
               <input
                 type="password"
                 value={providerForm.apiKey}
@@ -448,7 +467,17 @@ export function SettingsView() {
           </div>
           <div className="provider-form__actions">
             <button type="submit" disabled={savingProvider}>
-              {savingProvider ? "Saving…" : providerForm.id ? "Update Provider" : "Add Provider"}
+              {savingProvider
+                ? isChinese
+                  ? "正在保存…"
+                  : "Saving…"
+                : providerForm.id
+                ? isChinese
+                  ? "更新 Provider"
+                  : "Update Provider"
+                : isChinese
+                ? "添加 Provider"
+                : "Add Provider"}
             </button>
             {providerForm.id && (
               <button
@@ -457,32 +486,38 @@ export function SettingsView() {
                 className="provider-form__reset"
                 disabled={savingProvider}
               >
-                Cancel Edit
+                {isChinese ? "取消编辑" : "Cancel Edit"}
               </button>
             )}
           </div>
         </form>
         <ul className="panel__list">
-          {providers.length === 0 && <li>No providers configured.</li>}
+          {providers.length === 0 && <li>{isChinese ? "尚未配置任何 Provider。" : "No providers configured."}</li>}
           {providers.map((provider) => (
             <li key={provider.id} className="panel__list-item">
                 <div className="provider-entry">
                   <div>
                     <strong>{provider.name}</strong>
                     <span className="panel__list-subtitle">
-                      {provider.vendor} • Model: {provider.defaultModel}
+                      {isChinese ? "厂商" : "Vendor"}: {provider.vendor} • Model: {provider.defaultModel}
                     </span>
                     {provider.baseUrl && <span className="panel__list-subtitle">Base URL: {provider.baseUrl}</span>}
                     <span className="panel__list-subtitle">
-                      {provider.apiKey ? "API key stored in configuration." : "API key will be read from environment variables."}
+                      {provider.apiKey
+                        ? isChinese
+                          ? "API Key 已存储在配置文件中。"
+                          : "API key stored in configuration."
+                        : isChinese
+                        ? "将从环境变量读取 API Key。"
+                        : "API key will be read from environment variables."}
                     </span>
                   </div>
                 <div className="provider-entry__actions">
                   <button type="button" onClick={() => handleEditProvider(provider)}>
-                    Edit
+                    {isChinese ? "编辑" : "Edit"}
                   </button>
                   <button type="button" onClick={() => handleDeleteProvider(provider.id)}>
-                    Delete
+                    {isChinese ? "删除" : "Delete"}
                   </button>
                 </div>
               </div>
@@ -493,7 +528,7 @@ export function SettingsView() {
 
       <section className="panel">
         <header className="panel__header">
-          <h2>Function-to-Model Mapping</h2>
+          <h2>{isChinese ? "功能模型映射" : "Function-to-Model Mapping"}</h2>
         </header>
         <div className="mapping-list">
           {(Object.keys(MAPPING_LABELS) as MappingOperation[]).map((operation) => {
@@ -501,7 +536,16 @@ export function SettingsView() {
             return (
               <div key={operation} className="mapping-entry">
                 <div className="mapping-entry__header">
-                  <strong>{MAPPING_LABELS[operation]}</strong>
+                  <strong>
+                    {isChinese
+                      ? {
+                          termExtraction: "文档术语提取",
+                          explanation: "AI 释义助手",
+                          onboarding: "对话式引导",
+                          deepDive: "术语联想",
+                        }[operation]
+                      : MAPPING_LABELS[operation]}
+                  </strong>
                   {current && (
                     <span className="panel__list-subtitle">
                       {providers.find((provider) => provider.id === current.providerId)?.name || "Unknown"}
@@ -510,18 +554,18 @@ export function SettingsView() {
                 </div>
                 <div className="mapping-entry__controls">
                   <label>
-                    Provider
+                    {isChinese ? "Provider" : "Provider"}
                     <select
                       value={current?.providerId ?? ""}
                       onChange={(event) => handleMappingProviderChange(operation, event.target.value)}
                       disabled={providers.length === 0 || savingMapping === operation}
                     >
-                      <option value="">Not assigned</option>
+                      <option value="">{isChinese ? "未配置" : "Not assigned"}</option>
                       {availableProviderOptions}
                     </select>
                   </label>
                   <label>
-                    Model
+                    {isChinese ? "模型" : "Model"}
                     <input
                       type="text"
                       value={modelDrafts[operation] ?? ""}
@@ -540,11 +584,11 @@ export function SettingsView() {
 
       <section className="panel">
         <header className="panel__header">
-          <h2>User Preferences</h2>
+          <h2>{isChinese ? "用户偏好" : "User Preferences"}</h2>
         </header>
         <div className="preferences-form">
           <label>
-            Definition language
+            {isChinese ? "术语释义语言" : "Definition language"}
             <select
               value={language}
               onChange={(event) => handleLanguageChange(event.target.value as DefinitionLanguage)}

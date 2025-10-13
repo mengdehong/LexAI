@@ -1,10 +1,13 @@
 import { ChangeEvent, useCallback, useState } from "react";
 import { useAppState } from "../state/AppState";
+import { useLocale } from "../state/LocaleContext";
 
 type UploadStatus = "idle" | "uploading" | "success" | "error";
 
 export function DocumentPanel() {
   const { documentId, documents, setDocument, selectDocument } = useAppState();
+  const language = useLocale();
+  const isChinese = language === "zh-CN";
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
   const [message, setMessage] = useState<string | null>(null);
 
@@ -29,7 +32,9 @@ export function DocumentPanel() {
 
         if (!response.ok) {
           const responseClone = response.clone();
-          let detailMessage = `Upload failed with status ${response.status}`;
+          let detailMessage = isChinese
+            ? `上传失败，状态码 ${response.status}`
+            : `Upload failed with status ${response.status}`;
 
           try {
             const errorPayload = await response.json();
@@ -64,21 +69,34 @@ export function DocumentPanel() {
           await response.json();
 
         if (!payload.document_id) {
-          throw new Error("Upload succeeded but document_id missing from response");
+          throw new Error(
+            isChinese
+              ? "上传成功，但响应缺少 document_id。"
+              : "Upload succeeded but document_id missing from response",
+          );
         }
 
         let resolvedText = typeof payload.extracted_text === "string" ? payload.extracted_text : "";
 
         if (!resolvedText.trim()) {
-          resolvedText = "[Document text unavailable. Extraction returned empty result.]";
+          resolvedText = isChinese
+            ? "[未获取到文档正文，解析结果为空。]"
+            : "[Document text unavailable. Extraction returned empty result.]";
         }
 
         setDocument({ id: payload.document_id, text: resolvedText, name: file.name });
         setUploadStatus("success");
-        setMessage(payload.message ?? "Upload completed");
-        if (resolvedText.startsWith("[Document text unavailable.")) {
+        setMessage(
+          payload.message ?? (isChinese ? "上传完成" : "Upload completed"),
+        );
+        if (
+          resolvedText.startsWith("[Document text unavailable.") ||
+          resolvedText.startsWith("[未获取到文档正文")
+        ) {
           setMessage(
-            "Upload completed, but the document could not be parsed for preview. You can still retry with another file.",
+            isChinese
+              ? "上传完成，但文档无法解析预览。可尝试重新上传其他文件。"
+              : "Upload completed, but the document could not be parsed for preview. You can still retry with another file.",
           );
         }
         event.target.value = "";
@@ -88,7 +106,7 @@ export function DocumentPanel() {
         setMessage(detail);
       }
     },
-    [setDocument],
+    [isChinese, setDocument],
   );
 
   const handleSelectDocument = useCallback(
@@ -102,21 +120,25 @@ export function DocumentPanel() {
   return (
     <section className="panel">
       <header className="panel__header">
-        <h2>Documents</h2>
+        <h2>{isChinese ? "文档" : "Documents"}</h2>
         <label
           className={
             uploadStatus === "uploading" ? "upload-button upload-button--disabled" : "upload-button"
           }
         >
-          <span>Select file</span>
+          <span>{isChinese ? "选择文件" : "Select file"}</span>
           <input type="file" onChange={handleSelection} disabled={uploadStatus === "uploading"} />
         </label>
       </header>
-      {uploadStatus === "uploading" && <p className="panel__status">Uploading…</p>}
+      {uploadStatus === "uploading" && (
+        <p className="panel__status">{isChinese ? "正在上传…" : "Uploading…"}</p>
+      )}
       {uploadStatus === "success" && message && <p className="panel__status success">{message}</p>}
       {uploadStatus === "error" && message && <p className="panel__status error">{message}</p>}
       <ul className="panel__list">
-        {documents.length === 0 && <li>No documents uploaded yet.</li>}
+        {documents.length === 0 && (
+          <li>{isChinese ? "尚未上传任何文档。" : "No documents uploaded yet."}</li>
+        )}
         {documents.map((doc) => (
           <li key={doc.id} className={doc.id === documentId ? "panel__list-item active" : "panel__list-item"}>
             <button

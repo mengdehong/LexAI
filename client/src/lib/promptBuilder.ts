@@ -6,6 +6,13 @@ export type OnboardingProfile = {
   goals: string;
 };
 
+export type TermExpansionContext = {
+  term: string;
+  definition: string;
+  definitionCn?: string | null;
+  domain?: string;
+};
+
 const LANGUAGE_INSTRUCTIONS: Record<DefinitionLanguage, string> = {
   en: "Provide each definition in English.",
   "zh-CN": "请使用简体中文撰写每个术语的释义。",
@@ -65,4 +72,43 @@ Passage:
 """
 ${truncated}
 """`;
+}
+
+export function buildTermExpansionPrompt(
+  payload: TermExpansionContext,
+  language: DefinitionLanguage,
+): string {
+  const { term, definition, definitionCn, domain } = payload;
+  const focusDomain = domain?.trim().length ? domain.trim() : "general professional communication";
+  const languageDirection =
+    language === "zh-CN"
+      ? "Use Simplified Chinese for all generated content unless the term itself requires English."
+      : "Respond in English unless the term itself must remain in another language.";
+
+  const supplemental = definitionCn?.trim().length
+    ? `Existing bilingual definitions:
+- English: ${definition}
+- Chinese: ${definitionCn}`
+    : `Existing definition:
+- ${definition}`;
+
+  return `You are an AI language tutor specializing in the field of ${focusDomain}. A user is studying the technical term "${term}".
+${supplemental}
+
+To help the user deeply understand this term, generate the following content in a structured JSON format:
+{
+  "example_sentences": [
+    "Provide 3 clear and authentic example sentences using the term in a professional context.",
+    "...",
+    "..."
+  ],
+  "usage_scenario": "Describe a typical real-world scenario or problem where this term would be commonly used. Explain it in a simple, easy-to-understand way.",
+  "related_terms": [
+    { "term": "Related Term 1", "relationship": "Explain briefly how it's related (e.g., 'is a type of', 'is the opposite of', 'often used with')." },
+    { "term": "Related Term 2", "relationship": "..." }
+  ]
+}
+
+${languageDirection}
+Ensure your response is strictly valid JSON with double-quoted keys and strings. Do not include trailing commas, Markdown, or commentary.`;
 }
