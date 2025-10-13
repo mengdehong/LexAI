@@ -1,9 +1,9 @@
 import type { TermDefinition } from "../state/AppState";
-import { buildTermExtractionPrompt } from "./promptBuilder";
-import type { LexAIConfig, ProviderConfig } from "./configStore";
+import { buildOnboardingPrompt, buildTermExtractionPrompt, type OnboardingProfile } from "./promptBuilder";
+import type { DefinitionLanguage, LexAIConfig, ProviderConfig } from "./configStore";
 import { loadConfig } from "./configStore";
 
-type SupportedOperation = "termExtraction";
+type SupportedOperation = "termExtraction" | "onboarding";
 
 function normalizeBaseUrl(baseUrl: string | undefined, fallback: string): string {
   if (!baseUrl || baseUrl.trim().length === 0) {
@@ -63,6 +63,7 @@ function resolveApiKey(provider: ProviderConfig): string {
 async function callOpenAI(
   provider: ProviderConfig,
   model: string,
+  systemPrompt: string,
   prompt: string,
 ): Promise<string> {
   const baseUrl = normalizeBaseUrl(provider.baseUrl, "https://api.openai.com/v1");
@@ -86,8 +87,7 @@ async function callOpenAI(
       messages: [
         {
           role: "system",
-          content:
-            "You are a terminology extraction assistant. Respond only with minified JSON arrays of objects with 'term' and 'definition' keys.",
+          content: systemPrompt,
         },
         {
           role: "user",
@@ -114,6 +114,7 @@ async function callOpenAI(
 async function callGemini(
   provider: ProviderConfig,
   model: string,
+  systemPrompt: string,
   prompt: string,
 ): Promise<string> {
   const apiKey = resolveApiKey(provider);
@@ -135,7 +136,10 @@ async function callGemini(
       contents: [
         {
           role: "user",
-          parts: [{ text: prompt }],
+          parts: [
+            { text: systemPrompt },
+            { text: prompt },
+          ],
         },
       ],
       generationConfig: {
@@ -169,7 +173,23 @@ async function callGemini(
 
 const OPERATION_LABELS: Record<SupportedOperation, string> = {
   termExtraction: "Document Term Extraction",
+  onboarding: "Conversational Onboarding",
 };
+
+function buildSystemPrompt(operation: SupportedOperation, language: DefinitionLanguage): string {
+  const languageNote =
+    language === "zh-CN"
+      ? "Return definitions in Simplified Chinese unless otherwise specified."
+      : "Return definitions in English unless otherwise specified.";
+
+  switch (operation) {
+    case "onboarding":
+      return `You are LexAI's onboarding mentor. Use the provided learner context to curate a starter glossary tailored to their needs. Always respond with a minified JSON array. ${languageNote}`;
+    case "termExtraction":
+    default:
+      return `You are a multilingual terminology extraction assistant for LexAI. Respond only with minified JSON arrays of objects with 'term' and 'definition' keys. ${languageNote}`;
+  }
+}
 
 function ensureOperation(config: LexAIConfig, operation: SupportedOperation) {
   const mapping = config.modelMapping[operation];
@@ -196,17 +216,21 @@ function parseTermDefinitions(jsonString: string): TermDefinition[] {
     .filter((entry) => entry.term.length > 0 && entry.definition.length > 0);
 }
 
-async function invokeTermExtraction(config: LexAIConfig, documentText: string): Promise<TermDefinition[]> {
-  const { provider, model } = ensureOperation(config, "termExtraction");
-  const prompt = buildTermExtractionPrompt(documentText, config.preferences.definitionLanguage);
+async function runTermOperation(
+  config: LexAIConfig,
+  operation: SupportedOperation,
+  prompt: string,
+): Promise<TermDefinition[]> {
+  const { provider, model } = ensureOperation(config, operation);
+  const systemPrompt = buildSystemPrompt(operation, config.preferences.definitionLanguage);
 
   let jsonString: string;
   switch (provider.vendor) {
     case "openai":
-      jsonString = await callOpenAI(provider, model, prompt);
+      jsonString = await callOpenAI(provider, model, systemPrompt, prompt);
       break;
     case "gemini":
-      jsonString = await callGemini(provider, model, prompt);
+      jsonString = await callGemini(provider, model, systemPrompt, prompt);
       break;
     default:
       throw new Error(`Unsupported provider vendor: ${provider.vendor}`);
@@ -229,5 +253,16 @@ export async function extractDocumentTerms(documentText: string): Promise<TermDe
     throw new Error("No AI providers configured. Add one in Settings before extracting terms.");
   }
 
-  return invokeTermExtraction(config, documentText);
+  const prompt = buildTermExtractionPrompt(documentText, config.preferences.definitionLanguage);
+  return runTermOperation(config, "termExtraction", prompt);
+}
+
+export async function generateOnboardingTerms(profile: OnboardingProfile): Promise<TermDefinition[]> {
+  const config = await loadConfig();
+  if (config.providers.length === 0) {
+    throw new Error("No AI providers configured. Add one in Settings before running onboarding.");
+  }
+
+  const prompt = buildOnboardingPrompt(profile, config.preferences.definitionLanguage);
+  return runTermOperation(config, "onboarding", prompt);
 }
