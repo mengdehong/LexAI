@@ -54,5 +54,22 @@ jobs:
         with:
           projectPath: client
           tagName: ${{ github.ref_name }}
+          releaseDraft: false
+          prerelease: false
+          releaseName: "LexAI ${{ github.ref_name }}"
+          releaseBody: |
+            ## LexAI ${{ github.ref_name }} – Public Preview
+
+            Welcome to the first public preview of LexAI! This build includes:
+
+            - 🔐 Stronghold-backed API credential storage with automatic migration.
+            - ✅ Frontend Vitest suite for prompt and terminology tooling, plus Tauri integration tests for Stronghold + spaced review.
+            - ⚙️ Automated release pipeline generating installers for macOS, Windows, and Linux.
+
+            ### Getting Started
+            - Review the refreshed [README](https://github.com/${{ github.repository }}/blob/main/README.md) for highlights and build instructions.
+            - Follow the [CONFIGURING.md](https://github.com/${{ github.repository }}/blob/main/CONFIGURING.md) guide to add providers, store API keys securely, and map models to features.
+
+            Download the assets below for your platform and let us know what you think!
           includeDebug: false
           includeUpdaterJson: false
