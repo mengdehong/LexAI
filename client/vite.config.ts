@@ -12,6 +12,13 @@ export default defineConfig(async () => ({
       "@tauri-apps/api/tauri": "@tauri-apps/api/core",
     },
   },
+  test: {
+    environment: "node",
+    globals: true,
+    coverage: {
+      reporter: ["text", "lcov"],
+    },
+  },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //

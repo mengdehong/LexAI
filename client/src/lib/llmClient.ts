@@ -9,6 +9,8 @@ import {
 } from "./promptBuilder";
 import type { DefinitionLanguage, LexAIConfig, ProviderConfig } from "./configStore";
 import { loadConfig } from "./configStore";
+import { getApiKey } from "./apiKeys";
+import { dedupeTermDefinitions } from "./termUtils";
 
 type SupportedOperation = "termExtraction" | "onboarding" | "explanation" | "deepDive";
 
@@ -40,9 +42,14 @@ function extractJsonPayload(raw: string): string {
   return trimmed;
 }
 
-function resolveApiKey(provider: ProviderConfig): string {
-  if (provider.apiKey && provider.apiKey.trim().length > 0) {
-    return provider.apiKey.trim();
+async function resolveApiKey(provider: ProviderConfig): Promise<string> {
+  try {
+    const stored = await getApiKey(provider.id);
+    if (stored) {
+      return stored;
+    }
+  } catch (error) {
+    console.error(`Failed to load API key for provider ${provider.id}`, error);
   }
 
   const env = import.meta.env as Record<string, string | undefined>;
@@ -84,7 +91,7 @@ async function callOpenAI(
 ): Promise<string> {
   const baseUrl = normalizeBaseUrl(provider.baseUrl, "https://api.openai.com/v1");
   const endpoint = `${baseUrl}/chat/completions`;
-  const apiKey = resolveApiKey(provider);
+  const apiKey = await resolveApiKey(provider);
   if (!apiKey) {
     throw new Error(
       `Missing API key for provider "${provider.name}". Provide one in Settings or via environment variables.`,
@@ -134,7 +141,7 @@ async function callGemini(
   prompt: string,
   expectJson = true,
 ): Promise<string> {
-  const apiKey = resolveApiKey(provider);
+  const apiKey = await resolveApiKey(provider);
   if (!apiKey) {
     throw new Error(
       `Missing API key for provider "${provider.name}". Provide one in Settings or via environment variables.`,
@@ -321,10 +328,11 @@ async function runTermOperation(
 ): Promise<TermDefinition[]> {
   const jsonString = await runRawOperation(config, operation, prompt, true);
   const terms = parseTermDefinitions(jsonString);
-  if (terms.length === 0) {
+  const deduped = dedupeTermDefinitions(terms);
+  if (deduped.length === 0) {
     throw new Error("No terms returned by the language model.");
   }
-  return terms;
+  return deduped;
 }
 
 async function runTextOperation(

@@ -7,6 +7,7 @@ import type {
   ProviderVendor,
 } from "../lib/configStore";
 import { loadConfig, saveModelMapping, saveProviders, setDefinitionLanguage } from "../lib/configStore";
+import { hasApiKey, saveApiKey } from "../lib/apiKeys";
 import { useLocale } from "../state/LocaleContext";
 
 type ProviderFormState = {
@@ -73,6 +74,48 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
     onboarding: "",
     deepDive: "",
   });
+  const [storedApiKeys, setStoredApiKeys] = useState<Record<string, boolean>>({});
+  const [clearStoredKey, setClearStoredKey] = useState(false);
+
+  const resetProviderForm = useCallback(() => {
+    setProviderForm(INITIAL_PROVIDER_FORM);
+    setClearStoredKey(false);
+  }, []);
+
+  const refreshStoredKeys = useCallback(async (entries: ProviderConfig[]) => {
+    if (typeof window === "undefined" || !("__TAURI__" in window) || entries.length === 0) {
+      setStoredApiKeys(entries.reduce<Record<string, boolean>>((acc, item) => {
+        acc[item.id] = false;
+        return acc;
+      }, {}));
+      return;
+    }
+
+    try {
+      const results = await Promise.all(
+        entries.map(async (entry) => {
+          try {
+            const flag = await hasApiKey(entry.id);
+            return [entry.id, flag] as const;
+          } catch (error) {
+            console.error(`Failed to resolve API key status for ${entry.id}`, error);
+            return [entry.id, false] as const;
+          }
+        }),
+      );
+      setStoredApiKeys(Object.fromEntries(results));
+    } catch (error) {
+      console.error("Failed to refresh API key status", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (providers.length === 0) {
+      setStoredApiKeys({});
+      return;
+    }
+    refreshStoredKeys(providers);
+  }, [providers, refreshStoredKeys]);
 
   useEffect(() => {
     let active = true;
@@ -83,6 +126,10 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
           return;
         }
         setProviders(config.providers);
+        await refreshStoredKeys(config.providers);
+        if (!active) {
+          return;
+        }
         setModelMapping(config.modelMapping);
         setLanguage(config.preferences.definitionLanguage);
 
@@ -108,11 +155,7 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
     return () => {
       active = false;
     };
-  }, []);
-
-  const resetProviderForm = useCallback(() => {
-    setProviderForm(INITIAL_PROVIDER_FORM);
-  }, []);
+  }, [refreshStoredKeys]);
 
   const handleEditProvider = useCallback(
     (entry: ProviderConfig) => {
@@ -124,6 +167,7 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
         baseUrl: entry.baseUrl ?? "",
         apiKey: "",
       });
+      setClearStoredKey(false);
     },
     [],
   );
@@ -135,10 +179,21 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
       try {
         const nextProviders = providers.filter((entry) => entry.id !== providerId);
         await saveProviders(nextProviders);
+        try {
+          await saveApiKey(providerId, "");
+        } catch (err) {
+          console.error(`Failed to clear API key for provider ${providerId}`, err);
+        }
         setProviders(nextProviders);
         if (providerForm.id === providerId) {
           resetProviderForm();
         }
+
+        setStoredApiKeys((prev) => {
+          const next = { ...prev };
+          delete next[providerId];
+          return next;
+        });
 
         const updatedMapping: ModelMapping = { ...modelMapping };
         let changed = false;
@@ -195,18 +250,15 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
       setInfo(null);
 
       try {
+        let keyMessage: string | null = null;
         const identifier = providerForm.id ?? createProviderId();
         const trimmedApiKey = providerForm.apiKey.trim();
-        const existing = providerForm.id
-          ? providers.find((item) => item.id === identifier)
-          : undefined;
         const entry: ProviderConfig = {
           id: identifier,
           name: trimmedName,
           vendor: providerForm.vendor,
           defaultModel: trimmedModel,
           baseUrl: providerForm.baseUrl.trim() || undefined,
-          apiKey: trimmedApiKey ? trimmedApiKey : existing?.apiKey,
         };
 
         const nextProviders = providerForm.id
@@ -214,6 +266,16 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
           : [...providers, entry];
 
         await saveProviders(nextProviders);
+
+        if (trimmedApiKey.length > 0) {
+          await saveApiKey(identifier, trimmedApiKey);
+          setStoredApiKeys((prev) => ({ ...prev, [identifier]: true }));
+          keyMessage = isChinese ? "API Key 已安全保存。" : "API key stored securely.";
+        } else if (providerForm.id && clearStoredKey && storedApiKeys[identifier]) {
+          await saveApiKey(identifier, "");
+          setStoredApiKeys((prev) => ({ ...prev, [identifier]: false }));
+          keyMessage = isChinese ? "已删除保存的 API Key。" : "Stored API key removed.";
+        }
         setProviders(nextProviders);
 
         let assignedDefaults = false;
@@ -241,17 +303,22 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
           }
         }
 
+        let infoMessage: string;
         if (providerForm.id) {
-        setInfo(isChinese ? "Provider 已更新。" : "Provider updated.");
+          infoMessage = isChinese ? "Provider 已更新。" : "Provider updated.";
         } else if (assignedDefaults) {
-          setInfo(
-            isChinese
-              ? "已添加 Provider，并自动关联到未配置的功能。"
-              : "Provider added and assigned to unconfigured features.",
-          );
+          infoMessage = isChinese
+            ? "已添加 Provider，并自动关联到未配置的功能。"
+            : "Provider added and assigned to unconfigured features.";
         } else {
-          setInfo(isChinese ? "Provider 已添加。" : "Provider added.");
+          infoMessage = isChinese ? "Provider 已添加。" : "Provider added.";
         }
+
+        if (keyMessage) {
+          infoMessage = `${infoMessage} ${keyMessage}`;
+        }
+
+        setInfo(infoMessage);
         resetProviderForm();
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
@@ -260,7 +327,16 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
         setSavingProvider(false);
       }
     },
-    [isChinese, modelMapping, providerForm, providers, resetProviderForm, savingProvider],
+    [
+      clearStoredKey,
+      isChinese,
+      modelMapping,
+      providerForm,
+      providers,
+      resetProviderForm,
+      savingProvider,
+      storedApiKeys,
+    ],
   );
 
   const availableProviderOptions = useMemo(
@@ -455,8 +531,8 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
           <div className="provider-form__row">
             <label className="provider-form__api-key">
               {isChinese
-                ? "API Key（可选，不填则使用环境变量）"
-                : "API Key (optional, leave blank to use environment variables)"}
+                ? "API Key（可选，将安全存储）"
+                : "API Key (optional, stored securely)"}
               <input
                 type="password"
                 value={providerForm.apiKey}
@@ -465,6 +541,18 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
               />
             </label>
           </div>
+          {providerForm.id && storedApiKeys[providerForm.id] && (
+            <div className="provider-form__row">
+              <label className="provider-form__api-key">
+                <input
+                  type="checkbox"
+                  checked={clearStoredKey}
+                  onChange={(event) => setClearStoredKey(event.target.checked)}
+                />
+                {isChinese ? "删除已保存的 API Key" : "Remove stored API key"}
+              </label>
+            </div>
+          )}
           <div className="provider-form__actions">
             <button type="submit" disabled={savingProvider}>
               {savingProvider
@@ -503,10 +591,10 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
                     </span>
                     {provider.baseUrl && <span className="panel__list-subtitle">Base URL: {provider.baseUrl}</span>}
                     <span className="panel__list-subtitle">
-                      {provider.apiKey
+                      {storedApiKeys[provider.id]
                         ? isChinese
-                          ? "API Key 已存储在配置文件中。"
-                          : "API key stored in configuration."
+                          ? "API Key 已安全存储。"
+                          : "API key stored securely."
                         : isChinese
                         ? "将从环境变量读取 API Key。"
                         : "API key will be read from environment variables."}

@@ -1,20 +1,129 @@
-use std::{error::Error, fs, path::Path};
+use std::{error::Error, fs, path::Path, sync::Arc};
 
 use chrono::Utc;
 
-use reqwest::Client;
+use blake3::hash;
+use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
     ConnectOptions, Row, SqlitePool,
 };
 use tauri::{Manager, State};
 use tauri_plugin_dialog::{DialogExt, FilePath};
-use tokio::{fs as tokio_fs, sync::oneshot};
+use tauri_plugin_store::StoreExt;
+use tauri_plugin_stronghold::stronghold::Stronghold;
+use tokio::{
+    fs as tokio_fs,
+    sync::{oneshot, Mutex as AsyncMutex},
+};
+
+use iota_stronghold::{Client as StrongholdClient, ClientError};
 
 #[derive(Clone)]
 struct AppState {
     pool: SqlitePool,
+}
+
+const STRONGHOLD_SNAPSHOT: &str = "stronghold.scout";
+const STRONGHOLD_CLIENT_PATH: &[u8] = b"lexai_api_credentials";
+const STRONGHOLD_STORE_PREFIX: &str = "provider::";
+
+struct StrongholdInner {
+    stronghold: Stronghold,
+    client_path: Vec<u8>,
+}
+
+impl StrongholdInner {
+    fn ensure_client(&self) -> Result<StrongholdClient, String> {
+        match self.stronghold.inner().get_client(&self.client_path) {
+            Ok(client) => Ok(client),
+            Err(ClientError::ClientDataNotPresent) => {
+                match self.stronghold.inner().load_client(&self.client_path) {
+                    Ok(client) => Ok(client),
+                    Err(ClientError::ClientDataNotPresent) => self
+                        .stronghold
+                        .inner()
+                        .create_client(&self.client_path)
+                        .map_err(|err| err.to_string()),
+                    Err(err) => Err(err.to_string()),
+                }
+            }
+            Err(err) => Err(err.to_string()),
+        }
+    }
+
+    fn provider_key(provider: &str) -> Vec<u8> {
+        format!("{STRONGHOLD_STORE_PREFIX}{provider}").into_bytes()
+    }
+}
+
+struct SecretsManager {
+    inner: Arc<AsyncMutex<StrongholdInner>>,
+}
+
+impl SecretsManager {
+    fn new(inner: StrongholdInner) -> Self {
+        Self {
+            inner: Arc::new(AsyncMutex::new(inner)),
+        }
+    }
+
+    async fn save_api_key(&self, provider: &str, key: &str) -> Result<(), String> {
+        let guard = self.inner.lock().await;
+        let client = guard.ensure_client()?;
+        let record_key = StrongholdInner::provider_key(provider);
+        let sanitized = key.trim();
+
+        if sanitized.is_empty() {
+            let _ = client
+                .store()
+                .delete(&record_key)
+                .map_err(|err| err.to_string())?;
+        } else {
+            let _ = client
+                .store()
+                .insert(record_key.clone(), sanitized.as_bytes().to_vec(), None)
+                .map_err(|err| err.to_string())?;
+        }
+
+        guard.stronghold.save().map_err(|err| err.to_string())
+    }
+
+    async fn get_api_key(&self, provider: &str) -> Result<Option<String>, String> {
+        let guard = self.inner.lock().await;
+        let client = guard.ensure_client()?;
+        let record_key = StrongholdInner::provider_key(provider);
+
+        match client
+            .store()
+            .get(&record_key)
+            .map_err(|err| err.to_string())?
+        {
+            Some(bytes) => {
+                let value = String::from_utf8(bytes).map_err(|err| err.to_string())?;
+                let trimmed = value.trim();
+                if trimmed.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(trimmed.to_string()))
+                }
+            }
+            None => Ok(None),
+        }
+    }
+
+    async fn has_api_key(&self, provider: &str) -> Result<bool, String> {
+        let guard = self.inner.lock().await;
+        let client = guard.ensure_client()?;
+        let record_key = StrongholdInner::provider_key(provider);
+
+        client
+            .store()
+            .contains_key(&record_key)
+            .map_err(|err| err.to_string())
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -56,7 +165,7 @@ fn escape_csv_cell(value: &str) -> String {
 
 #[tauri::command]
 async fn fetch_backend_status() -> Result<String, String> {
-    let client = Client::new();
+    let client = HttpClient::new();
     let response = client
         .get("http://127.0.0.1:8000/")
         .send()
@@ -68,7 +177,7 @@ async fn fetch_backend_status() -> Result<String, String> {
 
 #[tauri::command]
 async fn search_term_contexts(doc_id: String, term: String) -> Result<Vec<String>, String> {
-    let client = Client::new();
+    let client = HttpClient::new();
     let url = format!("http://127.0.0.1:8000/documents/{doc_id}/search");
     let response = client
         .get(url)
@@ -291,9 +400,13 @@ async fn submit_review_result(
     known: bool,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    apply_review_result(&state.pool, id, known).await
+}
+
+async fn apply_review_result(pool: &SqlitePool, id: i64, known: bool) -> Result<(), String> {
     let record = sqlx::query("SELECT review_stage FROM terms WHERE id = ?")
         .bind(id)
-        .fetch_optional(&state.pool)
+        .fetch_optional(pool)
         .await
         .map_err(|err| err.to_string())?;
 
@@ -313,11 +426,33 @@ async fn submit_review_result(
         .bind(next_stage)
         .bind(timestamp)
         .bind(id)
-        .execute(&state.pool)
+        .execute(pool)
         .await
         .map_err(|err| err.to_string())?;
 
     Ok(())
+}
+
+#[tauri::command]
+async fn save_api_key(
+    provider: String,
+    key: String,
+    manager: State<'_, SecretsManager>,
+) -> Result<(), String> {
+    manager.save_api_key(&provider, &key).await
+}
+
+#[tauri::command]
+async fn get_api_key(
+    provider: String,
+    manager: State<'_, SecretsManager>,
+) -> Result<Option<String>, String> {
+    manager.get_api_key(&provider).await
+}
+
+#[tauri::command]
+async fn has_api_key(provider: String, manager: State<'_, SecretsManager>) -> Result<bool, String> {
+    manager.has_api_key(&provider).await
 }
 
 async fn init_database(db_path: &Path) -> Result<SqlitePool, sqlx::Error> {
@@ -335,12 +470,72 @@ async fn init_database(db_path: &Path) -> Result<SqlitePool, sqlx::Error> {
     Ok(pool)
 }
 
+fn migrate_legacy_api_keys(
+    app: &tauri::App,
+    secrets_manager: &SecretsManager,
+) -> Result<(), String> {
+    let config_store = app
+        .store("lexai-config.store")
+        .map_err(|err| err.to_string())?;
+
+    let Some(JsonValue::Array(mut providers)) = config_store.get("providers") else {
+        return Ok(());
+    };
+
+    let mut changed = false;
+
+    for provider in providers.iter_mut() {
+        let Some(object) = provider.as_object_mut() else {
+            continue;
+        };
+
+        let Some(provider_id) = object
+            .get("id")
+            .and_then(|value| value.as_str())
+            .map(str::to_string)
+        else {
+            // remove legacy apiKey if id missing
+            if object.remove("apiKey").is_some() {
+                changed = true;
+            }
+            continue;
+        };
+
+        if let Some(api_key_value) = object.remove("apiKey") {
+            changed = true;
+            if let Some(api_key_str) = api_key_value
+                .as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                tauri::async_runtime::block_on(
+                    secrets_manager.save_api_key(&provider_id, api_key_str),
+                )
+                .map_err(|err| err.to_string())?;
+            }
+        }
+    }
+
+    if changed {
+        config_store.set("providers", JsonValue::Array(providers));
+        config_store.save().map_err(|err| err.to_string())?;
+    }
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
+        .plugin(
+            tauri_plugin_stronghold::Builder::new(|password| {
+                hash(password.as_bytes()).as_bytes().to_vec()
+            })
+            .build(),
+        )
         .setup(|app| {
             let data_dir = app
                 .path()
@@ -350,6 +545,23 @@ pub fn run() {
             fs::create_dir_all(&data_dir).map_err(|err| -> Box<dyn Error> { Box::new(err) })?;
 
             let db_path = data_dir.join("lexai.db");
+            let stronghold_path = data_dir.join(STRONGHOLD_SNAPSHOT);
+            let master_key = hash(b"lexai-default-master-password");
+
+            let stronghold = Stronghold::new(&stronghold_path, master_key.as_bytes().to_vec())
+                .map_err(|err| -> Box<dyn Error> { Box::new(err) })?;
+
+            let secrets_inner = StrongholdInner {
+                stronghold,
+                client_path: STRONGHOLD_CLIENT_PATH.to_vec(),
+            };
+            let secrets_manager = SecretsManager::new(secrets_inner);
+
+            migrate_legacy_api_keys(app, &secrets_manager).map_err(|err| -> Box<dyn Error> {
+                Box::new(std::io::Error::new(std::io::ErrorKind::Other, err))
+            })?;
+
+            app.manage(secrets_manager);
 
             let pool = tauri::async_runtime::block_on(init_database(&db_path))
                 .map_err(|err| -> Box<dyn Error> { Box::new(err) })?;
@@ -366,8 +578,95 @@ pub fn run() {
             update_term,
             export_terms_csv,
             get_review_terms,
-            submit_review_result
+            submit_review_result,
+            save_api_key,
+            get_api_key,
+            has_api_key
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sqlx::Row;
+    use tempfile::tempdir;
+
+    async fn setup_pool() -> (tempfile::TempDir, SqlitePool) {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("lexai.db");
+        let pool = init_database(&db_path).await.unwrap();
+        (dir, pool)
+    }
+
+    #[tokio::test]
+    async fn submit_review_result_updates_stage_and_timestamp() {
+        let (_dir, pool) = setup_pool().await;
+
+        sqlx::query("INSERT INTO terms (term, definition, definition_cn) VALUES (?, ?, ?)")
+            .bind("Neural Network")
+            .bind("An interconnected group of nodes.")
+            .bind(Option::<String>::None)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let row = sqlx::query("SELECT id FROM terms WHERE term = ?")
+            .bind("Neural Network")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let id: i64 = row.get("id");
+
+        apply_review_result(&pool, id, true).await.unwrap();
+        let first = sqlx::query("SELECT review_stage, last_reviewed_at FROM terms WHERE id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let stage_after_known: i64 = first.get("review_stage");
+        let ts_first: String = first.get("last_reviewed_at");
+        assert_eq!(stage_after_known, 1);
+        assert!(!ts_first.is_empty());
+
+        apply_review_result(&pool, id, false).await.unwrap();
+        let second = sqlx::query("SELECT review_stage, last_reviewed_at FROM terms WHERE id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let stage_after_unknown: i64 = second.get("review_stage");
+        let ts_second: String = second.get("last_reviewed_at");
+        assert_eq!(stage_after_unknown, 0);
+        assert!(!ts_second.is_empty());
+        assert!(ts_second >= ts_first);
+    }
+
+    #[tokio::test]
+    async fn secrets_manager_persists_and_clears_keys() {
+        let dir = tempdir().unwrap();
+        let snapshot_path = dir.path().join("stronghold.scout");
+        let master_key = hash(b"test-master-password");
+        let stronghold = Stronghold::new(&snapshot_path, master_key.as_bytes().to_vec()).unwrap();
+
+        let secrets = SecretsManager::new(StrongholdInner {
+            stronghold,
+            client_path: b"test-client".to_vec(),
+        });
+
+        assert_eq!(secrets.get_api_key("openai").await.unwrap(), None);
+
+        secrets.save_api_key("openai", "sk-test-123").await.unwrap();
+        assert!(snapshot_path.exists());
+        assert_eq!(
+            secrets.get_api_key("openai").await.unwrap(),
+            Some("sk-test-123".to_string())
+        );
+        assert!(secrets.has_api_key("openai").await.unwrap());
+
+        secrets.save_api_key("openai", "").await.unwrap();
+        assert_eq!(secrets.get_api_key("openai").await.unwrap(), None);
+        assert!(!secrets.has_api_key("openai").await.unwrap());
+    }
 }

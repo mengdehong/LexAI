@@ -10,8 +10,9 @@ export type ProviderConfig = {
   vendor: ProviderVendor;
   defaultModel: string;
   baseUrl?: string;
-  apiKey?: string;
 };
+
+type LegacyProviderConfig = ProviderConfig & { apiKey?: string | null };
 
 export type MappingEntry = {
   providerId: string;
@@ -99,8 +100,8 @@ async function writeValue<T>(key: string, value: T): Promise<void> {
 }
 
 export async function loadConfig(): Promise<LexAIConfig> {
-  const [providers, modelMapping, rawPreferences, onboardingComplete] = await Promise.all([
-    readValue<ProviderConfig[]>("providers", DEFAULT_CONFIG.providers),
+  const [rawProviders, modelMapping, rawPreferences, onboardingComplete] = await Promise.all([
+    readValue<LegacyProviderConfig[]>("providers", DEFAULT_CONFIG.providers),
     readValue<ModelMapping>("modelMapping", DEFAULT_CONFIG.modelMapping),
     readValue<Preferences>("preferences", DEFAULT_CONFIG.preferences),
     readValue<boolean>("onboardingComplete", DEFAULT_CONFIG.onboardingComplete),
@@ -116,6 +117,11 @@ export async function loadConfig(): Promise<LexAIConfig> {
     await savePreferences(preferences);
   }
 
+  const providers = rawProviders.map((provider) => {
+    const { apiKey: _legacyApiKey, ...rest } = provider;
+    return rest;
+  });
+
   return {
     providers,
     modelMapping,
@@ -125,7 +131,11 @@ export async function loadConfig(): Promise<LexAIConfig> {
 }
 
 export async function saveProviders(next: ProviderConfig[]): Promise<void> {
-  await writeValue("providers", next);
+  const sanitized = next.map((provider) => {
+    const { apiKey: _ignored, ...rest } = provider as ProviderConfig & { apiKey?: string };
+    return { ...rest };
+  });
+  await writeValue("providers", sanitized);
 }
 
 export async function saveModelMapping(next: ModelMapping): Promise<void> {
