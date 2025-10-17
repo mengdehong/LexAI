@@ -49,19 +49,24 @@
 - 抽象 `dedupeTermDefinitions`，确保 LLM 产生的术语在写入全局术语库前已规范化。
 - 优化 `submit_review_result` 结构，便于测试复用。
 
+### 2.4 交付物完善（P7.T3）
+
+- **README.md 重写**：新增 v0.1.0 发布亮点、质量闸门、Stronghold 说明与自动化构建流程链接。
+- **CONFIGURING.md 新增**：覆盖 Provider 添加步骤、密钥存储策略、模型映射、环境变量映射以及排错建议。
+- **阶段文档同步**：本文件记录最新成果，演示 GIF/视频仍待后续补充。
+
+### 2.5 Release Automation（P7.T4）
+
+- 新建 `.github/workflows/release.yml`，对 `v*` 标签执行跨平台矩阵构建（Linux、Windows、macOS Intel & Apple Silicon）。
+- Linux 任务补齐 GTK/WebKit 依赖，确保 `glib-2.0` 可用后再运行 `tauri-action`。
+- 构建包自动上传到触发标签对应的 GitHub Release，形成标准的发布管线。
+
 ## 3. 待完成事项
 
-> 以下为 Phase 7 剩余必做项，需在发布前完成。
+> 以下为 Phase 7 仍需关注的事项，发布前建议完成。
 
-- **Documentation & Media (P7.T3)**
-  - 重写 `README.md`：加入新功能简介、安装指引、嵌入演示 GIF（视频素材另行制作）。
-  - 新增配置文档（例如 `CONFIGURING.md`）：说明如何添加/切换 Provider、如何获取并注入 API Key、环境变量说明、Stronghold 迁移提示。
-  - 产品演示 GIF：覆盖入门、文档处理、术语管理、复习流程。（本文件不涉及视频/动图制作，仅作提醒）
-
-- **Release Automation (P7.T4)**
-  - 补完 `.github/workflows/release.yml`：使用 `tauri-action` 构建 Windows / macOS (Intel & Apple Silicon) / Linux 包。
-  - 确保推送 tag（例如 `v1.0.0-rc.3`）后自动发布产物至 GitHub Release。
-  - 本地验证流程 & 文档化：说明如何触发 release flow、如何检查产物。
+- **Media Assets**
+  - 录制并替换 README 顶部的演示 GIF / 视频素材，覆盖 Onboarding → Termbase → Review 全流程。
 
 - **安全改进后续**
   - 讨论 Stronghold 主密码管理策略（例如首启设定、用户交互）。
@@ -86,6 +91,7 @@
   - 前端密钥调用：`client/src/lib/apiKeys.ts`、`client/src/components/SettingsView.tsx`
   - 去重工具：`client/src/lib/termUtils.ts`
   - 测试入口：`client/src/lib/__tests__/*.test.ts`、`cargo test` 模块
+  - Release 工作流：`.github/workflows/release.yml`
 
 ---
 
@@ -93,7 +99,7 @@
 
 - ✅ P7.T1 Stronghold 集成
 - ✅ P7.T2 自动化测试补齐
-- ⬜️ P7.T3 文档与媒体（待完成）
-- ⬜️ P7.T4 Release Workflow（待完成）
+- ✅ P7.T3 文档与媒体（文档已完成，媒体素材待补）
+- ✅ P7.T4 Release Workflow
 
 请在完成剩余交付后更新本文档，并将演示 GIF/视频等素材链接补充至对应章节。
