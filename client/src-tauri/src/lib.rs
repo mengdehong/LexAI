@@ -499,7 +499,7 @@ fn build_pdf(path: &Path, terms: &[Term]) -> Result<(), String> {
 
         doc.push(Paragraph::new(sanitize_pdf_text(&term.definition)));
 
-        if let Some(def_cn) = term.definition_cn.as_ref().map(String::as_str) {
+        if let Some(def_cn) = term.definition_cn.as_deref() {
             if !def_cn.is_empty() {
                 doc.push(Paragraph::new(sanitize_pdf_text(def_cn)));
             }
@@ -706,7 +706,7 @@ pub fn run() {
             let secrets_manager = SecretsManager::new(secrets_inner);
 
             migrate_legacy_api_keys(app, &secrets_manager).map_err(|err| -> Box<dyn Error> {
-                Box::new(std::io::Error::new(std::io::ErrorKind::Other, err))
+                Box::new(std::io::Error::other(err))
             })?;
 
             app.manage(secrets_manager);
