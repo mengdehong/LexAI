@@ -1,4 +1,4 @@
-# LexAI Workbench · v0.1.0
+# LexAI Workbench · v0.1.1
 
 LexAI is a desktop workbench for rapidly building domain glossaries, contextual definitions, and review loops with the help of modern LLMs. The v0.1.0 release focuses on shippable quality: secure credential management, reproducible builds, and the test coverage required to sustain the Phase 6 feature set.
 
@@ -79,7 +79,7 @@ CI (`.github/workflows/ci.yml`) runs the same commands on every push. Covering b
 
 ## Secure Credential Storage
 
-LexAI v0.1.0 replaces config-store secrets with **encrypted Stronghold snapshots**:
+LexAI v0.1.1 replaces config-store secrets with **encrypted Stronghold snapshots**:
 
 - Keys saved through the UI are persisted in `stronghold.scout` under your OS app-data directory.
 - On startup, any legacy plaintext key in `lexai-config.store` is migrated into Stronghold and then removed.

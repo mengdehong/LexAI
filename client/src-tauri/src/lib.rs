@@ -3,6 +3,13 @@ use std::{error::Error, fs, path::Path, sync::Arc};
 use chrono::Utc;
 
 use blake3::hash;
+use genanki_rs::{basic_model, Deck, Error as AnkiError, Note};
+use genpdf::{
+    elements::{Break, Paragraph, StyledElement},
+    fonts::{FontData, FontFamily},
+    style::Effect,
+    Document,
+};
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -10,6 +17,7 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
     ConnectOptions, Row, SqlitePool,
 };
+use tauri::async_runtime::spawn_blocking;
 use tauri::{Manager, State};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 use tauri_plugin_store::StoreExt;
@@ -126,7 +134,7 @@ impl SecretsManager {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 struct Term {
     id: i64,
     term: String,
@@ -305,39 +313,60 @@ async fn export_terms_csv(
     state: State<'_, AppState>,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    let records = sqlx::query(
-        "SELECT term, COALESCE(definition, '') AS definition, COALESCE(definition_cn, '') AS definition_cn FROM terms ORDER BY lower(term) ASC",
-    )
-    .fetch_all(&state.pool)
-    .await
-    .map_err(|err| err.to_string())?;
-
-    if records.is_empty() {
+    let terms = load_terms_sorted(&state.pool).await?;
+    if terms.is_empty() {
         return Err("No terms available to export.".to_string());
     }
 
+    let csv = spawn_blocking(move || build_csv(&terms))
+        .await
+        .map_err(|err| err.to_string())??;
+
+    let path = prompt_save_path(
+        &app_handle,
+        "lexai_terms.csv",
+        "CSV",
+        &["csv"],
+        "Export terminology",
+    )
+    .await?;
+
+    tokio_fs::write(path, csv)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    Ok(())
+}
+
+fn build_csv(terms: &[Term]) -> Result<String, String> {
     let mut csv = String::from("Term,Definition,Definition (zh-CN)\n");
-    for row in records {
-        let term: String = row.get("term");
-        let definition: String = row.get("definition");
-        let definition_cn: String = row.get("definition_cn");
+    for entry in terms {
         let line = format!(
             "{},{},{}\n",
-            escape_csv_cell(&term),
-            escape_csv_cell(&definition),
-            escape_csv_cell(&definition_cn)
+            escape_csv_cell(&entry.term),
+            escape_csv_cell(&entry.definition),
+            escape_csv_cell(entry.definition_cn.as_deref().unwrap_or(""))
         );
         csv.push_str(&line);
     }
+    Ok(csv)
+}
 
+async fn prompt_save_path(
+    app_handle: &tauri::AppHandle,
+    default_file_name: &str,
+    filter_label: &str,
+    filter_extensions: &[&str],
+    title: &str,
+) -> Result<std::path::PathBuf, String> {
     let (sender, receiver) = oneshot::channel::<Option<FilePath>>();
 
     let mut builder = app_handle
         .dialog()
         .file()
-        .set_title("Export terminology")
-        .set_file_name("lexai_terms.csv")
-        .add_filter("CSV", &["csv"]);
+        .set_title(title)
+        .set_file_name(default_file_name)
+        .add_filter(filter_label, filter_extensions);
 
     if let Some(window) = app_handle.get_webview_window("main") {
         builder = builder.set_parent(&window);
@@ -355,13 +384,132 @@ async fn export_terms_csv(
         return Err("Export cancelled.".to_string());
     };
 
-    let path = file_path.into_path().map_err(|err| err.to_string())?;
+    file_path.into_path().map_err(|err| err.to_string())
+}
 
-    tokio_fs::write(path, csv)
+async fn load_terms_sorted(pool: &SqlitePool) -> Result<Vec<Term>, String> {
+    let records = sqlx::query(
+        "SELECT id, term, COALESCE(definition, '') AS definition, COALESCE(definition_cn, '') AS definition_cn, review_stage, last_reviewed_at FROM terms ORDER BY lower(term) ASC",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|err| err.to_string())?;
+
+    Ok(records
+        .into_iter()
+        .map(|row| Term {
+            id: row.get("id"),
+            term: row.get("term"),
+            definition: row.get("definition"),
+            definition_cn: {
+                let value: String = row.get("definition_cn");
+                if value.is_empty() {
+                    None
+                } else {
+                    Some(value)
+                }
+            },
+            review_stage: row.get("review_stage"),
+            last_reviewed_at: row.get("last_reviewed_at"),
+        })
+        .collect())
+}
+
+#[tauri::command]
+async fn export_terms_anki(
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let terms = load_terms_sorted(&state.pool).await?;
+    if terms.is_empty() {
+        return Err("No terms available to export.".to_string());
+    }
+
+    let path = prompt_save_path(
+        &app_handle,
+        "lexai_terms.apkg",
+        "Anki deck",
+        &["apkg"],
+        "Export Anki deck",
+    )
+    .await?;
+
+    let deck_terms = terms.clone();
+    spawn_blocking(move || build_anki_package(&path, &deck_terms))
         .await
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| err.to_string())??;
 
     Ok(())
+}
+
+fn build_anki_package(path: &Path, terms: &[Term]) -> Result<(), String> {
+    let mut deck = Deck::new(805_202_110, "LexAI Termbase", "Exported from LexAI");
+    let model = basic_model();
+
+    for term in terms {
+        let definition_cn = term.definition_cn.as_deref();
+        let combined = build_anki_back_field(&term.definition, definition_cn);
+
+        let note = Note::new(model.clone(), vec![term.term.as_str(), &combined])
+            .map_err(|err: AnkiError| err.to_string())?;
+        deck.add_note(note);
+    }
+
+    deck.write_to_file(path.to_str().ok_or("Invalid path for Anki export")?)
+        .map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+async fn export_terms_pdf(
+    state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let terms = load_terms_sorted(&state.pool).await?;
+    if terms.is_empty() {
+        return Err("No terms available to export.".to_string());
+    }
+
+    let path = prompt_save_path(
+        &app_handle,
+        "lexai_terms.pdf",
+        "PDF",
+        &["pdf"],
+        "Export PDF",
+    )
+    .await?;
+
+    let printable_terms = terms.clone();
+    spawn_blocking(move || build_pdf(&path, &printable_terms))
+        .await
+        .map_err(|err| err.to_string())??;
+
+    Ok(())
+}
+
+fn build_pdf(path: &Path, terms: &[Term]) -> Result<(), String> {
+    let font_family = load_pdf_font_family()?;
+
+    let mut doc = Document::new(font_family);
+    doc.set_title("LexAI Terminology Export");
+    doc.set_minimal_conformance();
+
+    for term in terms {
+        let heading = StyledElement::new(Paragraph::new(term.term.clone()), Effect::Bold);
+        doc.push(heading);
+
+        doc.push(Paragraph::new(sanitize_pdf_text(&term.definition)));
+
+        if let Some(def_cn) = term.definition_cn.as_ref().map(String::as_str) {
+            if !def_cn.is_empty() {
+                doc.push(Paragraph::new(sanitize_pdf_text(def_cn)));
+            }
+        }
+
+        doc.push(Break::new(1.2));
+    }
+
+    doc.render_to_file(path)
+        .map_err(|err| format!("Failed to write PDF: {err}"))
 }
 
 #[tauri::command]
@@ -577,6 +725,8 @@ pub fn run() {
             delete_term,
             update_term,
             export_terms_csv,
+            export_terms_anki,
+            export_terms_pdf,
             get_review_terms,
             submit_review_result,
             save_api_key,
@@ -585,6 +735,56 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn build_anki_back_field(definition: &str, definition_cn: Option<&str>) -> String {
+    let mut content = encode_html(definition);
+    content = content.replace('\n', "<br>");
+
+    if let Some(def_cn) = definition_cn {
+        if !def_cn.trim().is_empty() {
+            let mut cn = encode_html(def_cn);
+            cn = cn.replace('\n', "<br>");
+            content.push_str("<br><div class=\"definition-cn\">");
+            content.push_str(&cn);
+            content.push_str("</div>");
+        }
+    }
+
+    content
+}
+
+fn encode_html(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            '\'' => escaped.push_str("&#39;"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
+}
+
+fn load_pdf_font_family() -> Result<FontFamily<FontData>, String> {
+    let font_bytes = include_bytes!("../resources/fonts/DejaVuSans.ttf");
+    let load = |data: &[u8]| FontData::new(data.to_vec(), None).map_err(|err| format!("Failed to load font: {err}"));
+
+    Ok(FontFamily {
+        regular: load(font_bytes)?,
+        bold: load(font_bytes)?,
+        italic: load(font_bytes)?,
+        bold_italic: load(font_bytes)?,
+    })
+}
+
+fn sanitize_pdf_text(value: &str) -> String {
+    value.replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .replace('\t', "    ")
 }
 
 #[cfg(test)]

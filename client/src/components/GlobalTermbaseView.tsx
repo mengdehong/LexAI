@@ -1,5 +1,5 @@
 
-import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { useAppState } from "../state/AppState";
 import { expandTerm, type TermExpansionResult } from "../lib/llmClient";
@@ -37,7 +37,9 @@ export function GlobalTermbaseView({ refreshToken = 0, onReviewCountChange }: Gl
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState({ term: "", definition: "", definition_cn: "" });
   const [savingId, setSavingId] = useState<number | null>(null);
-  const [exporting, setExporting] = useState(false);
+  const [exportingFormat, setExportingFormat] = useState<"csv" | "anki" | "pdf" | null>(null);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
   const [reviewDueCount, setReviewDueCount] = useState(0);
   const [expansionCache, setExpansionCache] = useState<Record<number, TermExpansionResult>>({});
@@ -212,29 +214,80 @@ export function GlobalTermbaseView({ refreshToken = 0, onReviewCountChange }: Gl
     [isChinese, refreshGlobalTerms],
   );
 
-  const handleExport = useCallback(async () => {
-    if (terms.length === 0) {
-      setToast({
-        kind: "error",
-        message: isChinese ? "暂无可导出的术语。" : "No terms available to export.",
-      });
+  const handleToggleExportMenu = useCallback(() => {
+    if (exportingFormat) {
       return;
     }
-    setExporting(true);
-    setError(null);
-    try {
-      await invoke("export_terms_csv");
-      setToast({
-        kind: "success",
-        message: isChinese ? "CSV 导出完成。" : "CSV export completed.",
-      });
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : String(err);
-      setError(detail);
-    } finally {
-      setExporting(false);
+    setIsExportMenuOpen((prev) => !prev);
+  }, [exportingFormat]);
+
+  useEffect(() => {
+    if (!isExportMenuOpen) {
+      return;
     }
-  }, [isChinese, terms.length]);
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!exportMenuRef.current) {
+        return;
+      }
+      if (!exportMenuRef.current.contains(event.target as Node)) {
+        setIsExportMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isExportMenuOpen]);
+
+  const handleExport = useCallback(
+    async (format: "csv" | "anki" | "pdf") => {
+      if (terms.length === 0) {
+        setToast({
+          kind: "error",
+          message: isChinese ? "暂无可导出的术语。" : "No terms available to export.",
+        });
+        setIsExportMenuOpen(false);
+        return;
+      }
+
+      setIsExportMenuOpen(false);
+      setExportingFormat(format);
+      setError(null);
+
+      const command =
+        format === "csv"
+          ? "export_terms_csv"
+          : format === "anki"
+          ? "export_terms_anki"
+          : "export_terms_pdf";
+
+      try {
+        await invoke(command);
+        const message =
+          format === "csv"
+            ? isChinese
+              ? "CSV 导出完成。"
+              : "CSV export completed."
+            : format === "anki"
+            ? isChinese
+              ? "Anki 卡组导出完成。"
+              : "Anki deck exported."
+            : isChinese
+            ? "PDF 导出完成。"
+            : "PDF export completed.";
+        setToast({
+          kind: "success",
+          message,
+        });
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err);
+        setError(detail);
+      } finally {
+        setExportingFormat(null);
+      }
+    },
+    [isChinese, terms.length],
+  );
 
   const openExpansion = useCallback(
     (record: StoredTerm) => {
@@ -371,21 +424,53 @@ export function GlobalTermbaseView({ refreshToken = 0, onReviewCountChange }: Gl
                 ? "刷新"
                 : "Refresh"}
             </button>
-            <button
-              type="button"
-              className="pill-button"
-              onClick={handleExport}
-              disabled={exporting || terms.length === 0}
-              aria-busy={exporting}
-            >
-              {exporting
-                ? isChinese
-                  ? "正在导出…"
-                  : "Exporting…"
-                : isChinese
-                ? "导出 CSV"
-                : "Export CSV"}
-            </button>
+            <div className="termbase-export" ref={exportMenuRef}>
+              <button
+                type="button"
+                className="pill-button"
+                onClick={handleToggleExportMenu}
+                disabled={!!exportingFormat || terms.length === 0}
+                aria-haspopup="true"
+                aria-expanded={isExportMenuOpen}
+                aria-busy={!!exportingFormat}
+              >
+                {exportingFormat
+                  ? isChinese
+                    ? "正在导出…"
+                    : "Exporting…"
+                  : isChinese
+                  ? "导出"
+                  : "Export"}
+              </button>
+              {isExportMenuOpen && (
+                <div className="termbase-export-menu" role="menu">
+                  <button
+                    type="button"
+                    onClick={() => handleExport("csv")}
+                    disabled={!!exportingFormat}
+                    role="menuitem"
+                  >
+                    {isChinese ? "导出为 CSV" : "Export CSV"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExport("anki")}
+                    disabled={!!exportingFormat}
+                    role="menuitem"
+                  >
+                    {isChinese ? "导出为 Anki 卡组 (.apkg)" : "Export Anki deck (.apkg)"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleExport("pdf")}
+                    disabled={!!exportingFormat}
+                    role="menuitem"
+                  >
+                    {isChinese ? "导出为 PDF 文档" : "Export PDF document"}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </header>
         {toast && <div className={`panel-toast ${toast.kind}`}>{toast.message}</div>}

@@ -1,6 +1,6 @@
 # LexAI Configuration Guide
 
-This document walks through everything you need to provision LexAI v0.1.0: registering providers, storing API keys securely, mapping models to features, and tuning the review loop. It complements the high-level overview in [`README.md`](README.md).
+This document walks through everything you need to provision LexAI v0.1.1: registering providers, storing API keys securely, mapping models to features, and tuning the review loop. It complements the high-level overview in [`README.md`](README.md).
 
 ## Table of Contents
 
@@ -45,7 +45,7 @@ Before launching the desktop app:
 
 ## Secure Storage Options
 
-LexAI v0.1.0 stores credentials in a **Stronghold** vault (`stronghold.scout`) located in your OS application data directory:
+LexAI v0.1.1 stores credentials in a **Stronghold** vault (`stronghold.scout`) located in your OS application data directory:
 
 - Keys saved through the UI are encrypted at rest. Migrating from earlier releases happens automatically on launch.
 - Clearing the “Remove stored API key” checkbox in the Settings form deletes the vault entry while preserving the provider configuration.
