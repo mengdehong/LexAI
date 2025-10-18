@@ -18,7 +18,7 @@ type OnboardingViewProps = {
   language: DefinitionLanguage;
   hasOnboardingMapping: boolean;
   onRequestSettings: () => void;
-  onComplete: () => void;
+  onComplete: (options?: { nextView?: "workspace" | "global" | "review" | "settings" }) => void;
   mode?: OnboardingMode;
   onDismiss?: () => void;
 };
@@ -386,7 +386,7 @@ export function OnboardingView({
       setSuccessMessage(SUCCESS_COPY[mode][language]);
 
       setTimeout(() => {
-        onComplete();
+        onComplete({ nextView: mode === "initial" ? "global" : undefined });
       }, 800);
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
@@ -396,6 +396,26 @@ export function OnboardingView({
       setBusy(false);
     }
   }, [busy, domain, goals, hasOnboardingMapping, language, mode, onComplete, proficiency, refreshGlobalTerms]);
+
+  const handleSkip = useCallback(async () => {
+    if (busy) {
+      return;
+    }
+
+    try {
+      setBusy(true);
+      setError(null);
+      if (mode === "initial") {
+        await markOnboardingComplete();
+      }
+      onComplete({ nextView: "workspace" });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      setError(detail || "Failed to skip onboarding.");
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, mode, onComplete]);
 
   const renderForm = () => {
     if (step === 0) {
@@ -490,15 +510,17 @@ export function OnboardingView({
         {busy && progressMessage && (
           <p className="onboarding-helper onboarding-progress-status">{progressMessage}</p>
         )}
-        <button type="button" onClick={handleGenerate} disabled={busy || !hasOnboardingMapping}>
-          {busy
-            ? language === "zh-CN"
-              ? "正在生成……"
-              : "Generating…"
-            : language === "zh-CN"
-            ? "生成我的术语库"
-            : "Generate my glossary"}
-        </button>
+        {mode === "generator" && (
+          <button type="button" onClick={handleGenerate} disabled={busy || !hasOnboardingMapping}>
+            {busy
+              ? language === "zh-CN"
+                ? "正在生成……"
+                : "Generating…"
+              : language === "zh-CN"
+              ? "生成我的术语库"
+              : "Generate my glossary"}
+          </button>
+        )}
       </div>
     );
   };
@@ -557,6 +579,42 @@ export function OnboardingView({
 
         <footer className="onboarding-footer" aria-busy={busy}>
           {renderForm()}
+          {mode === "initial" && step === 3 && (
+            <div className="onboarding-actions">
+              <button
+                type="button"
+                className="onboarding-primary"
+                onClick={handleGenerate}
+                disabled={busy || !hasOnboardingMapping}
+              >
+                {busy
+                  ? language === "zh-CN"
+                    ? "正在生成……"
+                    : "Generating…"
+                  : language === "zh-CN"
+                  ? "开始 AI 生成"
+                  : "Generate with AI"}
+              </button>
+              <div className="onboarding-actions__copy">
+                <strong>
+                  {language === "zh-CN" ? "不想现在生成？" : "Prefer to skip for now?"}
+                </strong>
+                <p>
+                  {language === "zh-CN"
+                    ? "你随时可以在顶栏点击“AI 生成术语集”再次使用此流程。"
+                    : "You can always run the AI generator later from the top bar."}
+                </p>
+              </div>
+              <button type="button" className="onboarding-secondary" onClick={handleSkip} disabled={busy}>
+                {language === "zh-CN" ? "跳过，以后再说" : "Skip for now"}
+              </button>
+            </div>
+          )}
+          {mode === "initial" && step !== 3 && (
+            <button type="button" className="onboarding-secondary" onClick={handleSkip} disabled={busy}>
+              {language === "zh-CN" ? "跳过，以后再说" : "Skip for now"}
+            </button>
+          )}
         </footer>
       </div>
     </div>

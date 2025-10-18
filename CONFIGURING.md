@@ -1,6 +1,6 @@
 # LexAI Configuration Guide
 
-This document walks through everything you need to provision LexAI v0.1.1: registering providers, storing API keys securely, mapping models to features, and tuning the review loop. It complements the high-level overview in [`README.md`](README.md).
+This document walks through everything you need to provision LexAI v0.1.2: registering providers, storing API keys securely, mapping models to features, and tuning the review loop. It complements the high-level overview in [`README.md`](README.md).
 
 ## Table of Contents
 

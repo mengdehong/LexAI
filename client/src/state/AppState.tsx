@@ -36,6 +36,7 @@ type AppStateValue = {
   setSelectedTerm: (term: string | null) => void;
   refreshGlobalTerms: () => Promise<void>;
   reset: () => void;
+  hydrateDocuments: (entries: UploadedDocument[], activeId: string | null) => void;
 };
 
 const AppStateContext = createContext<AppStateValue | undefined>(undefined);
@@ -115,6 +116,19 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     [activateDocument, documents, setDocuments],
   );
 
+  const hydrateDocuments = useCallback(
+    (entries: UploadedDocument[], activeId: string | null) => {
+      setDocuments(entries);
+      if (!activeId) {
+        reset();
+        return;
+      }
+      const active = entries.find((doc) => doc.id === activeId) ?? null;
+      activateDocument(active);
+    },
+    [activateDocument, reset, setDocuments],
+  );
+
   const value = useMemo<AppStateValue>(
     () => ({
       documentId,
@@ -131,6 +145,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       setSelectedTerm,
       refreshGlobalTerms,
       reset,
+      hydrateDocuments,
     }),
     [
       documentId,
@@ -147,6 +162,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       setSelectedTerm,
       refreshGlobalTerms,
       reset,
+      hydrateDocuments,
     ],
   );
 

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
+import debounce from "lodash.debounce";
 import { DocumentPanel } from "./components/DocumentPanel";
 import { ReadingPanel } from "./components/ReadingPanel";
 import { TermsPanel } from "./components/TermsPanel";
@@ -10,6 +11,7 @@ import { OnboardingView } from "./components/OnboardingView";
 import { ReviewCenter } from "./components/ReviewCenter";
 import { loadConfig, type DefinitionLanguage } from "./lib/configStore";
 import { useAppState } from "./state/AppState";
+import { loadSessionState, saveSessionState, type SessionState, type SessionView } from "./lib/sessionStore";
 import { LocaleProvider } from "./state/LocaleContext";
 import "./App.css";
 
@@ -21,7 +23,15 @@ type ReviewTerm = {
   id: number;
 };
 
-function Workspace() {
+const SAVE_DEBOUNCE_MS = 400;
+
+type WorkspaceProps = {
+  readingScrollPosition: number;
+  onReadingScrollChange: (position: number) => void;
+  documentText: string;
+};
+
+function Workspace({ readingScrollPosition, onReadingScrollChange, documentText }: WorkspaceProps) {
   return (
     <div className="workspace">
       <div className="workspace__column">
@@ -29,7 +39,11 @@ function Workspace() {
         <TermsPanel />
       </div>
       <div className="workspace__column">
-        <ReadingPanel />
+        <ReadingPanel
+          initialScrollPosition={readingScrollPosition}
+          onScrollPositionChange={onReadingScrollChange}
+          documentText={documentText}
+        />
         <ContextPanel />
       </div>
     </div>
@@ -52,7 +66,50 @@ function App() {
   const [termbaseRefreshToken, setTermbaseRefreshToken] = useState(0);
   const [reviewDueCount, setReviewDueCount] = useState(0);
   const previousView = useRef(activeView);
-  const { documentId } = useAppState();
+  const { documentId, documents, documentText, terms, setTerms, hydrateDocuments } = useAppState();
+  const [readingScrollPosition, setReadingScrollPosition] = useState(0);
+  const contentRef = useRef<HTMLElement | null>(null);
+  const latestSessionRef = useRef<SessionState | null>(null);
+  const saveSession = useMemo(
+    () =>
+      debounce((state: SessionState) => {
+        void saveSessionState(state);
+      }, SAVE_DEBOUNCE_MS),
+    [],
+  );
+  const restoreInProgress = useRef(false);
+
+  const buildSessionSnapshot = useCallback(
+    (overrides: Partial<SessionState> = {}) => {
+      const activeDocument =
+        documentId && documents.length ? documents.find((doc) => doc.id === documentId) ?? null : null;
+      const readingPosition = overrides.readingViewScrollPosition ?? readingScrollPosition;
+      const snapshot: SessionState = {
+        activeView: overrides.activeView ?? activeView,
+        lastOpenedDocument: overrides.lastOpenedDocument ?? activeDocument,
+        documents:
+          overrides.documents ??
+          documents.map((doc) => ({
+            id: doc.id,
+            name: doc.name,
+            text: doc.text,
+            uploadedAt: doc.uploadedAt,
+          })),
+        currentExtractedTerms: overrides.currentExtractedTerms ?? terms,
+        readingViewScrollPosition: readingPosition,
+        onboardingCompleted: overrides.onboardingCompleted ?? onboardingComplete ?? false,
+      };
+      return snapshot;
+    },
+    [activeView, documentId, documents, onboardingComplete, readingScrollPosition, terms],
+  );
+
+  useEffect(() => {
+    return () => {
+      saveSession.flush();
+      saveSession.cancel();
+    };
+  }, [saveSession]);
 
   useEffect(() => {
     let active = true;
@@ -116,6 +173,48 @@ function App() {
     fetchReviewCount();
   }, []);
 
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      const saved = await loadSessionState();
+      if (!active || !saved) {
+        return;
+      }
+      restoreInProgress.current = true;
+      latestSessionRef.current = saved;
+      if (saved.activeView) {
+        setActiveView(saved.activeView);
+      }
+      if (saved.documents && saved.documents.length > 0) {
+        const normalizedDocs = saved.documents.map((doc) => ({
+          id: doc.id,
+          name: doc.name,
+          text: doc.text ?? "",
+          uploadedAt: doc.uploadedAt ?? Date.now(),
+        }));
+        hydrateDocuments(normalizedDocs, saved.lastOpenedDocument?.id ?? null);
+      }
+      if (saved.currentExtractedTerms) {
+        setTerms(
+          saved.currentExtractedTerms.map((entry) => ({
+            term: entry.term,
+            definition: entry.definition,
+            definition_cn: entry.definition_cn ?? null,
+          })),
+        );
+      }
+      if (typeof saved.readingViewScrollPosition === "number") {
+        setReadingScrollPosition(saved.readingViewScrollPosition);
+      }
+      restoreInProgress.current = false;
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [hydrateDocuments, setTerms]);
+
   const refreshConfig = useCallback(async () => {
     try {
       const config = await loadConfig();
@@ -144,6 +243,20 @@ function App() {
   }, [activeView, refreshConfig]);
 
   useEffect(() => {
+    if (restoreInProgress.current) {
+      return;
+    }
+
+    const snapshot = buildSessionSnapshot();
+    latestSessionRef.current = snapshot;
+    saveSession(snapshot);
+  }, [activeView, documentId, documents, terms, buildSessionSnapshot, saveSession]);
+
+  const handleContentScroll = useCallback(() => {
+    // Workspace handles scroll persistence.
+  }, []);
+
+  useEffect(() => {
     if (onboardingComplete === false && activeView !== "settings") {
       setEnforceOnboarding(true);
     }
@@ -157,13 +270,20 @@ function App() {
     }
   }, [generatorOpen, showOnboarding]);
 
-  const handleOnboardingComplete = () => {
-    setOnboardingComplete(true);
-    setEnforceOnboarding(false);
-    setActiveView("global");
-    refreshConfig();
-    setTermbaseRefreshToken((token) => token + 1);
-  };
+  const handleOnboardingComplete = useCallback(
+    (options?: { nextView?: SessionView }) => {
+      setOnboardingComplete(true);
+      setEnforceOnboarding(false);
+      const nextView = options?.nextView ?? activeView;
+      setActiveView(nextView);
+      const snapshot = buildSessionSnapshot({ onboardingCompleted: true, activeView: nextView });
+      latestSessionRef.current = snapshot;
+      saveSession(snapshot);
+      refreshConfig();
+      setTermbaseRefreshToken((token) => token + 1);
+    },
+    [activeView, buildSessionSnapshot, refreshConfig, saveSession],
+  );
 
   const handleLanguagePreferenceChange = useCallback((lang: DefinitionLanguage) => {
     setDefinitionLanguage(lang);
@@ -233,7 +353,7 @@ function App() {
             </button>
           </div>
         </header>
-        <section className="app-shell__content">
+        <section className="app-shell__content" ref={contentRef} onScroll={handleContentScroll}>
           {showOnboarding ? (
             <OnboardingView
               language={definitionLanguage}
@@ -246,7 +366,13 @@ function App() {
             />
           ) : (
             <>
-              {activeView === "workspace" && <Workspace />}
+              {activeView === "workspace" && (
+                <Workspace
+                  readingScrollPosition={readingScrollPosition}
+                  onReadingScrollChange={(position) => setReadingScrollPosition(position)}
+                  documentText={documentText}
+                />
+              )}
               {activeView === "global" && (
                 <GlobalTermbaseView
                   refreshToken={termbaseRefreshToken}
@@ -282,9 +408,11 @@ function App() {
                 setGeneratorOpen(false);
                 setActiveView("settings");
               }}
-              onComplete={() => {
+              onComplete={(options) => {
                 setGeneratorOpen(false);
-                setActiveView("global");
+                if (options?.nextView) {
+                  setActiveView(options.nextView);
+                }
                 refreshConfig();
                 setTermbaseRefreshToken((token) => token + 1);
               }}

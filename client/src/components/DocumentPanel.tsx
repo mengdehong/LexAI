@@ -137,7 +137,11 @@ export function DocumentPanel() {
       {uploadStatus === "error" && message && <p className="panel__status error">{message}</p>}
       <ul className="panel__list">
         {documents.length === 0 && (
-          <li>{isChinese ? "尚未上传任何文档。" : "No documents uploaded yet."}</li>
+          <li>
+            {isChinese
+              ? "尚未上传任何文档。点击上方“选择文件”或使用顶部“AI 生成术语集”快速开始。"
+              : "No documents uploaded yet. Use Select file above or the top bar Generate with AI button to get started."}
+          </li>
         )}
         {documents.map((doc) => (
           <li key={doc.id} className={doc.id === documentId ? "panel__list-item active" : "panel__list-item"}>

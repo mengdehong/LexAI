@@ -1,11 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { extractDocumentTerms, explainSelection } from "../lib/llmClient";
 import { useAppState } from "../state/AppState";
 import { useLocale } from "../state/LocaleContext";
 
-export function ReadingPanel() {
-  const { documentId, documentText, setTerms, setContexts, setSelectedTerm, globalTerms } =
-    useAppState();
+type ReadingPanelProps = {
+  initialScrollPosition: number;
+  onScrollPositionChange: (position: number) => void;
+  documentText: string;
+};
+
+export function ReadingPanel({
+  initialScrollPosition,
+  onScrollPositionChange,
+  documentText,
+}: ReadingPanelProps) {
+  const { documentId, setTerms, setContexts, setSelectedTerm, globalTerms } = useAppState();
   const language = useLocale();
   const isChinese = language === "zh-CN";
   const [renderedHtml, setRenderedHtml] = useState<string>("");
@@ -17,6 +26,8 @@ export function ReadingPanel() {
   const [explanation, setExplanation] = useState<string | null>(null);
   const [explainError, setExplainError] = useState<string | null>(null);
   const [hovered, setHovered] = useState<{ text: string; x: number; y: number } | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const isDisabled = useMemo(
     () => !documentId || documentText.trim().length === 0,
@@ -171,6 +182,14 @@ export function ReadingPanel() {
     setRenderedHtml(highlightedHtml);
   }, [highlightedHtml]);
 
+  useEffect(() => {
+    const container = scrollContainerRef.current;
+    if (!container) {
+      return;
+    }
+    container.scrollTop = initialScrollPosition;
+  }, [initialScrollPosition]);
+
   return (
     <section className="panel reading-panel">
       <header className="panel__header">
@@ -196,6 +215,7 @@ export function ReadingPanel() {
         readOnly
         value={documentText || ""}
         className="reading-panel__text-input"
+        ref={textareaRef}
         onSelect={handleSelectionChange}
         onKeyUp={handleSelectionChange}
         onMouseUp={handleSelectionChange}
@@ -203,6 +223,7 @@ export function ReadingPanel() {
       <div
         className="reading-panel__text"
         aria-label={isChinese ? "文档预览" : "Document preview"}
+        ref={scrollContainerRef}
         dangerouslySetInnerHTML={{ __html: renderedHtml }}
         onMouseOver={(event) => {
           const target = event.target as HTMLElement;
@@ -222,7 +243,10 @@ export function ReadingPanel() {
           if (target.matches("mark.term-highlight")) {
             setHovered(null);
           }
-        }}
+    }}
+    onScroll={(event) => {
+      onScrollPositionChange(event.currentTarget.scrollTop);
+    }}
       />
       {hovered && (
         <div
