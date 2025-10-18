@@ -705,9 +705,8 @@ pub fn run() {
             };
             let secrets_manager = SecretsManager::new(secrets_inner);
 
-            migrate_legacy_api_keys(app, &secrets_manager).map_err(|err| -> Box<dyn Error> {
-                Box::new(std::io::Error::other(err))
-            })?;
+            migrate_legacy_api_keys(app, &secrets_manager)
+                .map_err(|err| -> Box<dyn Error> { Box::new(std::io::Error::other(err)) })?;
 
             app.manage(secrets_manager);
 
