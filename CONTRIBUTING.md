@@ -43,5 +43,10 @@
 ## 开发与质量要求
 - 小步快跑：频繁提交、原子改动、尽量小的 PR
 - 质量闸门：合并前确保 Build/Lint/Tests 均 PASS
+- GitHub Actions 校验：在本地先执行以下命令，与 CI 一致后再提交/打 Tag
+  - `cd client && npm run build`
+  - `cd client && npm run test`
+  - `cd client && npm run tauri build -- --bundles deb rpm`
+  - `cd client/src-tauri && cargo fmt --all -- --check`
 - 安全：API 密钥使用系统钥匙串/安全存储，不要提交到仓库
 - 可重复：依赖版本固定，提供本地启动与测试说明
