@@ -771,7 +771,9 @@ fn encode_html(value: &str) -> String {
 
 fn load_pdf_font_family() -> Result<FontFamily<FontData>, String> {
     let font_bytes = include_bytes!("../resources/fonts/DejaVuSans.ttf");
-    let load = |data: &[u8]| FontData::new(data.to_vec(), None).map_err(|err| format!("Failed to load font: {err}"));
+    let load = |data: &[u8]| {
+        FontData::new(data.to_vec(), None).map_err(|err| format!("Failed to load font: {err}"))
+    };
 
     Ok(FontFamily {
         regular: load(font_bytes)?,
@@ -782,7 +784,8 @@ fn load_pdf_font_family() -> Result<FontFamily<FontData>, String> {
 }
 
 fn sanitize_pdf_text(value: &str) -> String {
-    value.replace("\r\n", "\n")
+    value
+        .replace("\r\n", "\n")
         .replace('\r', "\n")
         .replace('\t', "    ")
 }
