@@ -27,6 +27,11 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -47,6 +52,39 @@ jobs:
             librsvg2-dev \
             pkg-config \
             build-essential
+
+      - name: Install backend dependencies
+        shell: bash
+        run: |
+          python -m venv backend/.venv
+          VENV_PYTHON=$(python -c "import pathlib, sys; root = pathlib.Path('backend/.venv').resolve(); path = root / ('Scripts/python.exe' if sys.platform.startswith('win') else 'bin/python'); print(path)")
+          echo "VENV_PYTHON=$VENV_PYTHON" >> $GITHUB_ENV
+          "$VENV_PYTHON" -m pip install --upgrade pip
+          "$VENV_PYTHON" -m pip install \
+            maturin==1.9.6 \
+            pyinstaller \
+            \"pydantic>=2.12,<3\" \
+            \"pydantic-settings>=2.6,<3\" \
+            \"qdrant-client>=1.15.1,<2\" \
+            \"langchain-text-splitters>=0.2.2,<0.3\" \
+            \"sentence-transformers>=3,<4\"
+
+      - name: Build rust_core extension
+        shell: bash
+        working-directory: backend/rust_core
+        run: "$VENV_PYTHON" -m maturin develop --release
+
+      - name: Build RPC worker
+        shell: bash
+        working-directory: backend
+        run: "$VENV_PYTHON" build.py
+
+      - name: Sync RPC worker resources
+        shell: bash
+        run: |
+          rm -rf client/src-tauri/resources/rpc_server
+          mkdir -p client/src-tauri/resources
+          cp -R backend/dist/rpc_server client/src-tauri/resources/
 
       - name: Install frontend dependencies
         run: npm ci
