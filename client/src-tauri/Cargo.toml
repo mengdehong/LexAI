@@ -27,7 +27,7 @@ tauri-plugin-opener = "2"
 tauri-plugin-store = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-stronghold = "2"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "sync"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "fs", "sync", "process", "io-util", "time"] }
 chrono = { version = "0.4", features = ["serde"] }
 blake3 = "1"
 iota_stronghold = "2"

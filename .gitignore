@@ -55,3 +55,4 @@ demo.md
 # ============== Python-Rust Bridge (PyO3/Maturin) ==============
 *.pyd
 backend/rust_core/target/
+client/src-tauri/resources/rpc_server

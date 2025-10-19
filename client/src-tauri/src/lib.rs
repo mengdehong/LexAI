@@ -1,4 +1,12 @@
-use std::{error::Error, fs, path::Path, sync::Arc};
+use std::{
+    error::Error,
+    fs,
+    path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
 
 use chrono::Utc;
 
@@ -10,26 +18,120 @@ use genpdf::{
     style::Effect,
     Document,
 };
-use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+use serde_json::{json, Value as JsonValue};
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqlitePoolOptions},
     ConnectOptions, Row, SqlitePool,
 };
 use tauri::async_runtime::spawn_blocking;
-use tauri::{Manager, State};
+use tauri::{Manager, State, WindowEvent};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 use tauri_plugin_store::StoreExt;
 use tauri_plugin_stronghold::stronghold::Stronghold;
 use tokio::{
     fs as tokio_fs,
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
+    process::{Child, ChildStdin, ChildStdout},
     sync::{oneshot, Mutex as AsyncMutex},
+    time::{timeout, Duration},
 };
 
 use iota_stronghold::{Client as StrongholdClient, ClientError};
 
-#[derive(Clone)]
+struct RpcClient {
+    child: Arc<AsyncMutex<Child>>,
+    stdin: Arc<AsyncMutex<ChildStdin>>,
+    stdout: Arc<AsyncMutex<BufReader<ChildStdout>>>,
+    next_id: AtomicU64,
+    response_timeout: Duration,
+}
+
+impl RpcClient {
+    fn new(mut child: Child, response_timeout: Duration) -> Result<Self, String> {
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "Child process stdin unavailable".to_string())?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "Child process stdout unavailable".to_string())?;
+
+        Ok(Self {
+            child: Arc::new(AsyncMutex::new(child)),
+            stdin: Arc::new(AsyncMutex::new(stdin)),
+            stdout: Arc::new(AsyncMutex::new(BufReader::new(stdout))),
+            next_id: AtomicU64::new(1),
+            response_timeout,
+        })
+    }
+
+    async fn call(&self, method: &str, params: JsonValue) -> Result<JsonValue, String> {
+        {
+            let mut child = self.child.lock().await;
+            if let Some(status) = child
+                .try_wait()
+                .map_err(|err| format!("Failed to poll child status: {err}"))?
+            {
+                return Err(format!(
+                    "RPC worker exited unexpectedly with status {status}"
+                ));
+            }
+        }
+
+        let request_id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": method,
+            "params": params,
+        });
+
+        let mut payload = request.to_string();
+        payload.push('\n');
+
+        {
+            let mut stdin = self.stdin.lock().await;
+            stdin
+                .write_all(payload.as_bytes())
+                .await
+                .map_err(|err| format!("Failed to write request: {err}"))?;
+            stdin
+                .flush()
+                .await
+                .map_err(|err| format!("Failed to flush request: {err}"))?;
+        }
+
+        let mut line = String::new();
+        {
+            let mut stdout = self.stdout.lock().await;
+            timeout(self.response_timeout, stdout.read_line(&mut line))
+                .await
+                .map_err(|_| "Timed out waiting for RPC response".to_string())?
+                .map_err(|err| format!("Failed to read response: {err}"))?;
+        }
+
+        if line.trim().is_empty() {
+            return Err("Received empty response from RPC worker".to_string());
+        }
+
+        let response: JsonValue = serde_json::from_str(&line)
+            .map_err(|err| format!("Failed to parse response JSON: {err}"))?;
+
+        if let Some(error) = response.get("error") {
+            return Err(error.to_string());
+        }
+
+        let result = response
+            .get("result")
+            .cloned()
+            .ok_or_else(|| "Response missing result".to_string())?;
+
+        Ok(result)
+    }
+}
+
 struct AppState {
     pool: SqlitePool,
 }
@@ -156,6 +258,18 @@ struct SearchResponsePayload {
     results: Vec<SearchResultPayload>,
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Serialize, Deserialize)]
+struct UploadPayload {
+    document_id: String,
+    #[serde(default)]
+    extracted_text: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
+    #[serde(default)]
+    status: String,
+}
+
 fn escape_csv_cell(value: &str) -> String {
     let mut escaped = String::with_capacity(value.len() + 2);
     escaped.push('"');
@@ -171,43 +285,226 @@ fn escape_csv_cell(value: &str) -> String {
     escaped
 }
 
-#[tauri::command]
-async fn fetch_backend_status() -> Result<String, String> {
-    let client = HttpClient::new();
-    let response = client
-        .get("http://127.0.0.1:8000/")
-        .send()
-        .await
+#[derive(Clone, Default)]
+struct RpcManager {
+    client: Arc<AsyncMutex<Option<Arc<RpcClient>>>>,
+}
+
+impl RpcManager {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn client_handle(&self) -> Arc<AsyncMutex<Option<Arc<RpcClient>>>> {
+        self.client.clone()
+    }
+
+    async fn ensure_client(&self, app: &tauri::AppHandle) -> Result<Arc<RpcClient>, String> {
+        if let Some(existing) = self.client.lock().await.as_ref() {
+            return Ok(existing.clone());
+        }
+
+        let client = Arc::new(spawn_rpc_worker(app).await?);
+        self.client.lock().await.replace(client.clone());
+        Ok(client)
+    }
+
+    async fn shutdown_with(handle: Arc<AsyncMutex<Option<Arc<RpcClient>>>>) {
+        if let Some(client) = handle.lock().await.take() {
+            let _ = client.child.lock().await.kill().await;
+        }
+    }
+}
+
+async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
+    let resource_path = app
+        .path()
+        .resolve(
+            "resources/rpc_server/rpc_server",
+            tauri::path::BaseDirectory::Resource,
+        )
         .map_err(|err| err.to_string())?;
 
-    response.text().await.map_err(|err| err.to_string())
+    if !resource_path.exists() {
+        return Err(format!(
+            "RPC worker binary missing at {}",
+            resource_path.display()
+        ));
+    }
+
+    let resource_dir = resource_path
+        .parent()
+        .ok_or_else(|| "Failed to resolve RPC resource directory".to_string())?
+        .to_path_buf();
+
+    let internal_dir = resource_dir.join("_internal");
+    if !internal_dir.exists() {
+        return Err(format!(
+            "RPC resource internal directory missing at {}",
+            internal_dir.display()
+        ));
+    }
+
+    let storage_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| err.to_string())?
+        .join("qdrant");
+
+    fs::create_dir_all(&storage_dir).map_err(|err| err.to_string())?;
+
+    let mut command = tokio::process::Command::new(resource_path);
+    command.kill_on_drop(true);
+    command.stdin(std::process::Stdio::piped());
+    command.stdout(std::process::Stdio::piped());
+    command.env("QDRANT__STORAGE", storage_dir.to_string_lossy().to_string());
+
+    #[cfg(target_os = "linux")]
+    {
+        use std::env;
+
+        let current_ld = env::var("LD_LIBRARY_PATH").unwrap_or_default();
+        let mut paths = Vec::with_capacity(3);
+        paths.push(resource_dir.to_string_lossy().to_string());
+        paths.push(internal_dir.to_string_lossy().to_string());
+        if !current_ld.is_empty() {
+            paths.push(current_ld);
+        }
+        command.env("LD_LIBRARY_PATH", paths.join(":"));
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000);
+    }
+
+    let child = command
+        .spawn()
+        .map_err(|err| format!("Failed to spawn RPC worker: {err}"))?;
+    RpcClient::new(child, Duration::from_secs(30))
 }
 
 #[tauri::command]
-async fn search_term_contexts(doc_id: String, term: String) -> Result<Vec<String>, String> {
-    let client = HttpClient::new();
-    let url = format!("http://127.0.0.1:8000/documents/{doc_id}/search");
+async fn fetch_backend_status(
+    app: tauri::AppHandle,
+    rpc_manager: State<'_, RpcManager>,
+) -> Result<String, String> {
+    let client = rpc_manager.ensure_client(&app).await?;
     let response = client
-        .get(url)
-        .query(&[("term", term)])
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
+        .call("ping", json!({}))
+        .await?
+        .get("status")
+        .and_then(JsonValue::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| "Invalid ping response".to_string())?;
+    Ok(response)
+}
 
-    if !response.status().is_success() {
-        let detail = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Failed to fetch contexts".to_string());
-        return Err(detail);
-    }
+#[tauri::command]
+async fn search_term_contexts(
+    doc_id: String,
+    term: String,
+    app: tauri::AppHandle,
+    rpc_manager: State<'_, RpcManager>,
+) -> Result<Vec<String>, String> {
+    let client = rpc_manager.ensure_client(&app).await?;
+    let response = client
+        .call(
+            "search_term_contexts",
+            json!({
+                "document_id": doc_id,
+                "term": term,
+                "limit": 5,
+            }),
+        )
+        .await?;
 
-    let payload: SearchResponsePayload = response.json().await.map_err(|err| err.to_string())?;
+    let payload: SearchResponsePayload =
+        serde_json::from_value(response).map_err(|err| format!("Invalid RPC response: {err}"))?;
+
     Ok(payload
         .results
         .into_iter()
         .map(|entry| entry.chunk_text)
         .collect())
+}
+
+#[tauri::command]
+#[allow(dead_code)]
+async fn upload_document(
+    file_path: String,
+    file_name: String,
+    app: tauri::AppHandle,
+    rpc_manager: State<'_, RpcManager>,
+) -> Result<UploadPayload, String> {
+    let client = rpc_manager.ensure_client(&app).await?;
+    let response = client
+        .call(
+            "upload_document",
+            json!({
+                "file_path": file_path,
+                "file_name": file_name,
+            }),
+        )
+        .await?;
+
+    let mut payload: UploadPayload =
+        serde_json::from_value(response).map_err(|err| format!("Invalid RPC response: {err}"))?;
+
+    if payload.document_id.trim().is_empty() {
+        return Err("Upload failed: missing document_id".to_string());
+    }
+
+    if !payload.status.eq_ignore_ascii_case("processed") {
+        return Err(format!("Upload failed: {}", payload.status));
+    }
+
+    if payload.extracted_text.is_none() {
+        payload.extracted_text = Some(String::new());
+    }
+
+    if payload.message.is_none() {
+        payload.message = Some("Document processed successfully".to_string());
+    }
+
+    let _ = tokio_fs::remove_file(&file_path).await;
+
+    Ok(payload)
+}
+
+#[tauri::command]
+#[allow(dead_code)]
+async fn store_temp_document(
+    file_name: String,
+    contents: Vec<u8>,
+    app: tauri::AppHandle,
+) -> Result<String, String> {
+    let base_dir: PathBuf = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| err.to_string())?
+        .join("uploads");
+
+    tokio_fs::create_dir_all(&base_dir)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    let sanitized = Path::new(&file_name)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("upload.bin");
+
+    let unique_name = format!("upload-{}-{}", Utc::now().timestamp_millis(), sanitized);
+    let file_path = base_dir.join(unique_name);
+
+    tokio_fs::write(&file_path, contents)
+        .await
+        .map_err(|err| err.to_string())?;
+
+    file_path
+        .to_str()
+        .map(str::to_string)
+        .ok_or_else(|| "Generated path is not valid UTF-8".to_string())
 }
 
 #[tauri::command]
@@ -713,11 +1010,28 @@ pub fn run() {
             let pool = tauri::async_runtime::block_on(init_database(&db_path))
                 .map_err(|err| -> Box<dyn Error> { Box::new(err) })?;
             app.manage(AppState { pool });
+            app.manage(RpcManager::new());
+
+            if let Some(window) = app.get_webview_window("main") {
+                let manager_handle = app.state::<RpcManager>().client_handle();
+                let shutdown_handle = manager_handle.clone();
+                window.on_window_event(move |event| {
+                    if matches!(event, WindowEvent::CloseRequested { .. }) {
+                        let shutdown_handle = shutdown_handle.clone();
+                        tauri::async_runtime::spawn(async move {
+                            RpcManager::shutdown_with(shutdown_handle).await;
+                        });
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             fetch_backend_status,
             search_term_contexts,
+            store_temp_document,
+            upload_document,
             add_term,
             get_all_terms,
             find_term_by_name,

@@ -41,10 +41,10 @@ def _classify_extraction_failure(exc: Exception) -> DocumentProcessingError:
             exc,
         )
 
-    if "unsupported" in lowered or "format" in lowered:
+    if any(keyword in lowered for keyword in ("invalid file header", "unsupported", "format")):
         return DocumentProcessingError(
             "unsupported_format",
-            "Unsupported document format. Please upload a PDF, DOCX, or text file.",
+            "Unsupported document format. Please upload a PDF file.",
             exc,
         )
 

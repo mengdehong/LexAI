@@ -9,4 +9,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.21", features = ["extension-module"] }
-extractous = { path = "../../3rd/extractous/extractous-core" }
+pdf-extract = { path = "../../3rd/pdf-extract" }

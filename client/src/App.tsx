@@ -15,10 +15,6 @@ import { loadSessionState, saveSessionState, type SessionState, type SessionView
 import { LocaleProvider } from "./state/LocaleContext";
 import "./App.css";
 
-type BackendStatusPayload = {
-  status: string;
-};
-
 type ReviewTerm = {
   id: number;
 };
@@ -116,11 +112,10 @@ function App() {
 
     const fetchStatus = async (): Promise<boolean> => {
       try {
-        const raw = (await invoke<string>("fetch_backend_status")) ?? "";
-        const payload: BackendStatusPayload = JSON.parse(raw);
+        const status = await invoke<string>("fetch_backend_status");
 
         if (active) {
-          setStatus(payload.status ?? "unknown");
+          setStatus(status ?? "unknown");
           setError(null);
         }
         return true;

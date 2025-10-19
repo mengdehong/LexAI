@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/tauri";
 import { ChangeEvent, useCallback, useState } from "react";
 import { useAppState } from "../state/AppState";
 import { useLocale } from "../state/LocaleContext";
@@ -22,61 +23,29 @@ export function DocumentPanel() {
       setMessage(null);
 
       try {
-        const formData = new FormData();
-        formData.append("file", file);
-
-        const response = await fetch("http://127.0.0.1:8000/documents/upload", {
-          method: "POST",
-          body: formData,
+        const arrayBuffer = await file.arrayBuffer();
+        const tempPath = await invoke<string>("store_temp_document", {
+          fileName: file.name,
+          contents: Array.from(new Uint8Array(arrayBuffer)),
         });
 
-        if (!response.ok) {
-          const responseClone = response.clone();
-          let detailMessage = isChinese
-            ? `上传失败，状态码 ${response.status}`
-            : `Upload failed with status ${response.status}`;
-
-          try {
-            const errorPayload = await response.json();
-            const detail = errorPayload?.detail;
-            if (typeof detail === "string" && detail.trim().length > 0) {
-              detailMessage = detail;
-            } else if (detail && typeof detail === "object") {
-              const message = typeof detail.message === "string" ? detail.message : "";
-              const code = typeof detail.code === "string" ? detail.code : "";
-              detailMessage = [message, code].filter(Boolean).join(" — ") || detailMessage;
-            }
-          } catch (jsonErr) {
-            try {
-              const text = await responseClone.text();
-              if (text.trim().length > 0) {
-                detailMessage = text;
-              }
-            } catch {
-              console.warn("Failed to parse upload error response", jsonErr);
-            }
-          }
-
-          throw new Error(detailMessage);
-        }
-
-        const payload: {
-          document_id?: string;
-          status?: string;
-          message?: string;
+        const payload = await invoke<{
+          document_id: string;
           extracted_text?: string | null;
-        } =
-          await response.json();
+          message?: string | null;
+          status: string;
+        }>("upload_document", {
+          filePath: tempPath,
+          fileName: file.name,
+        });
 
-        if (!payload.document_id) {
+        if (!payload.document_id || !payload.status || payload.status.toLowerCase() !== "processed") {
           throw new Error(
-            isChinese
-              ? "上传成功，但响应缺少 document_id。"
-              : "Upload succeeded but document_id missing from response",
+            isChinese ? "上传失败，请稍后重试。" : "Upload failed. Please try again.",
           );
         }
 
-        let resolvedText = typeof payload.extracted_text === "string" ? payload.extracted_text : "";
+        let resolvedText = payload.extracted_text ?? "";
 
         if (!resolvedText.trim()) {
           resolvedText = isChinese

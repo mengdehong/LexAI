@@ -1,6 +1,6 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use extractous::Extractor;
+use pdf_extract::{OutputError, extract_text as pdf_extract_text};
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
 
@@ -11,10 +11,13 @@ fn hello_from_rust() -> PyResult<String> {
 
 #[pyfunction]
 fn extract_text(path: String) -> PyResult<String> {
-    Extractor::new()
-        .extract_file_to_string(&path)
-        .map(|(text, _)| text)
-        .map_err(|err| PyRuntimeError::new_err(err.to_string()))
+    match pdf_extract_text(&path) {
+        Ok(text) => Ok(text),
+        Err(OutputError::PdfError(err)) if err.to_string().contains("encrypted") => Err(
+            PyRuntimeError::new_err("PDF is encrypted and cannot be parsed"),
+        ),
+        Err(err) => Err(PyRuntimeError::new_err(err.to_string())),
+    }
 }
 
 #[pymodule]
