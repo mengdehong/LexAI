@@ -45,6 +45,26 @@ jobs:
           ref: ${{ steps.vars.outputs.tag }}
           fetch-depth: 0
 
+      - name: Verify release source tree
+        shell: bash
+        run: |
+          missing=0
+          for p in \
+            backend/rust_core/Cargo.toml \
+            3rd/pdf-extract/Cargo.toml \
+            backend/rpc_server.spec \
+            backend/build.py; do
+            if [ ! -f "$p" ]; then
+              echo "ERROR: required file missing in tag: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "This tag does not contain all required sources (e.g., 3rd/pdf-extract).\nPlease create a new tag from a commit that includes these files, or trigger Run workflow with such a tag." >&2
+            exit 1
+          fi
+
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
