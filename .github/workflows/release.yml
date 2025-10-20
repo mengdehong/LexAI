@@ -44,6 +44,15 @@ jobs:
         with:
           ref: ${{ steps.vars.outputs.tag }}
           fetch-depth: 0
+          submodules: false
+
+      - name: Init submodules (if any)
+        if: hashFiles('.gitmodules') != ''
+        shell: bash
+        run: |
+          echo "Initializing submodules from .gitmodules"
+          git submodule sync --recursive
+          git submodule update --init --recursive
 
       - name: Verify release source tree
         shell: bash
