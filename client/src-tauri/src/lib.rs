@@ -415,6 +415,16 @@ async fn fetch_backend_status(
 }
 
 #[tauri::command]
+async fn fetch_backend_health(
+    app: tauri::AppHandle,
+    rpc_manager: State<'_, RpcManager>,
+) -> Result<JsonValue, String> {
+    let client = rpc_manager.ensure_client(&app).await?;
+    let response = client.call("health", json!({})).await?;
+    Ok(response)
+}
+
+#[tauri::command]
 async fn search_term_contexts(
     doc_id: String,
     term: String,
@@ -1043,6 +1053,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             fetch_backend_status,
+            fetch_backend_health,
             search_term_contexts,
             store_temp_document,
             upload_document,
