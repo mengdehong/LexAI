@@ -513,8 +513,16 @@ async fn fetch_backend_health(
     rpc_manager: State<'_, RpcManager>,
 ) -> Result<JsonValue, String> {
     let client = rpc_manager.ensure_client(&app).await?;
-    let response = client.call("health", json!({})).await?;
-    Ok(response)
+    match client.call("health", json!({})).await {
+        Ok(val) => Ok(val),
+        Err(err) => {
+            if err.contains("-32601") || err.to_lowercase().contains("method not found") {
+                client.call("ping", json!({})).await
+            } else {
+                Err(err)
+            }
+        }
+    }
 }
 
 #[tauri::command]
