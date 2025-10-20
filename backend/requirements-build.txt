@@ -1,0 +1,7 @@
+maturin==1.9.6
+pyinstaller
+pydantic>=2.12,<3
+pydantic-settings>=2.6,<3
+qdrant-client>=1.15.1,<2
+langchain-text-splitters>=0.2.2,<0.3
+sentence-transformers>=3,<4

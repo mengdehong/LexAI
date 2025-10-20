@@ -60,14 +60,7 @@ jobs:
           VENV_PYTHON=$(python -c "import pathlib, sys; root = pathlib.Path('backend/.venv').resolve(); path = root / ('Scripts/python.exe' if sys.platform.startswith('win') else 'bin/python'); print(path)")
           echo "VENV_PYTHON=$VENV_PYTHON" >> $GITHUB_ENV
           "$VENV_PYTHON" -m pip install --upgrade pip
-          "$VENV_PYTHON" -m pip install \
-            maturin==1.9.6 \
-            pyinstaller \
-            'pydantic>=2.12,<3' \
-            'pydantic-settings>=2.6,<3' \
-            'qdrant-client>=1.15.1,<2' \
-            'langchain-text-splitters>=0.2.2,<0.3' \
-            'sentence-transformers>=3,<4'
+          "$VENV_PYTHON" -m pip install -r backend/requirements-build.txt
 
       - name: Build rust_core extension
         shell: bash
