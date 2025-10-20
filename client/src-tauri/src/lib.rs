@@ -317,13 +317,22 @@ impl RpcManager {
 }
 
 async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
-    let resource_path = app
+    let mut resource_path = app
         .path()
         .resolve(
             "resources/rpc_server/rpc_server",
             tauri::path::BaseDirectory::Resource,
         )
         .map_err(|err| err.to_string())?;
+
+    // On Windows, the PyInstaller binary has .exe extension
+    #[cfg(windows)]
+    if !resource_path.exists() {
+        let candidate = resource_path.with_extension("exe");
+        if candidate.exists() {
+            resource_path = candidate;
+        }
+    }
 
     if !resource_path.exists() {
         return Err(format!(
@@ -337,12 +346,16 @@ async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
         .ok_or_else(|| "Failed to resolve RPC resource directory".to_string())?
         .to_path_buf();
 
-    let internal_dir = resource_dir.join("_internal");
-    if !internal_dir.exists() {
-        return Err(format!(
-            "RPC resource internal directory missing at {}",
-            internal_dir.display()
-        ));
+    // The _internal directory is required on Linux for bundled libs; skip strict check on other OSes
+    #[cfg(target_os = "linux")]
+    {
+        let internal_dir = resource_dir.join("_internal");
+        if !internal_dir.exists() {
+            return Err(format!(
+                "RPC resource internal directory missing at {}",
+                internal_dir.display()
+            ));
+        }
     }
 
     let storage_dir = app

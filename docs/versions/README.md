@@ -10,3 +10,6 @@
 - 提交信息：`docs(versions): add phase-<N> summary <YYYYMMDD>`
 
 内容要求见 `_TEMPLATE.md`。
+
+示例：
+- `phase-11-roadmap-20251020.md` – Roadmap 与发布稳定性改进（Public Preview 之后）。
