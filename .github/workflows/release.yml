@@ -29,8 +29,20 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
+      - name: Resolve release tag
+        id: vars
+        shell: bash
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ inputs.tag_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.vars.outputs.tag }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -82,6 +94,8 @@ jobs:
       - name: Sync RPC worker resources
         shell: bash
         run: |
+          tagName: ${{ steps.vars.outputs.tag }}
+
           rm -rf client/src-tauri/resources/rpc_server
           mkdir -p client/src-tauri/resources
           cp -R backend/dist/rpc_server client/src-tauri/resources/
