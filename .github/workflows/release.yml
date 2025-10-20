@@ -141,9 +141,9 @@ jobs:
           tagName: ${{ steps.vars.outputs.tag }}
           releaseDraft: false
           prerelease: false
-          releaseName: "LexAI ${{ github.ref_name }}"
+          releaseName: "LexAI ${{ steps.vars.outputs.tag }}"
           releaseBody: |
-            ## LexAI ${{ github.ref_name }} – Public Preview
+            ## LexAI ${{ steps.vars.outputs.tag }} – Public Preview
 
             Welcome to the first public preview of LexAI! This build includes:
 
