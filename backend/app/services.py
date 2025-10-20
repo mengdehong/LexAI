@@ -62,9 +62,14 @@ def _classify_extraction_failure(exc: Exception) -> DocumentProcessingError:
     )
 
 try:
-    import rust_core
-except ImportError as exc:  # pragma: no cover - exercised during runtime
-    raise RuntimeError("rust_core module is required for document processing") from exc
+    import rust_core  # type: ignore
+except ImportError:  # pragma: no cover - runtime fallback for tests/CI without rust_core
+    class _RustCoreFallback:
+        @staticmethod
+        def extract_text(_: str) -> str:
+            raise RuntimeError("rust_core module is required for document processing")
+
+    rust_core = _RustCoreFallback()  # type: ignore
 
 
 COLLECTION_NAME = "lexai_documents"

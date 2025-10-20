@@ -32,12 +32,28 @@ jobs:
           cache: npm
           cache-dependency-path: client/package-lock.json
 
-      - name: Install client dependencies
-        run: npm ci
+      - name: Install client dependencies (include dev)
+        run: npm ci --include=dev
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install backend test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements-build.txt fastapi pytest httpx
+
+      - name: Run backend tests
+        run: pytest -q backend
         working-directory: client
 
       - name: Build React client
         run: npm run build
+        working-directory: client
+
+      - name: Run client unit tests
+        run: npm run -s test
         working-directory: client
 
       - name: Install Rust toolchain
@@ -46,6 +62,9 @@ jobs:
           components: rustfmt, clippy
 
       - name: Cargo fmt
+      - name: Cargo test
+        run: cargo test --all --release
+        working-directory: client/src-tauri
         run: cargo fmt --all -- --check
         working-directory: client/src-tauri
 

@@ -378,6 +378,7 @@ async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
 
         let current_ld = env::var("LD_LIBRARY_PATH").unwrap_or_default();
         let mut paths = Vec::with_capacity(3);
+        let internal_dir = resource_dir.join("_internal");
         paths.push(resource_dir.to_string_lossy().to_string());
         paths.push(internal_dir.to_string_lossy().to_string());
         if !current_ld.is_empty() {

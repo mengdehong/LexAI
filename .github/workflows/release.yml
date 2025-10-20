@@ -187,8 +187,25 @@ jobs:
 
           cp -R backend/dist/rpc_server client/src-tauri/resources/
 
-      - name: Install frontend dependencies
-        run: npm ci
+
+	      - name: Run backend unit tests (Linux only)
+	        if: matrix.platform.os == 'ubuntu-latest'
+	        shell: bash
+	        run: |
+	          python -m pip install --upgrade pip
+	          python -m pip install pytest fastapi httpx
+	          pytest -q backend
+
+	      - name: Run client unit tests
+	        run: npm run -s test
+	        working-directory: client
+
+	      - name: Cargo test
+	        run: cargo test --all --release
+	        working-directory: client/src-tauri
+
+      - name: Install frontend dependencies (include dev)
+        run: npm ci --include=dev
         working-directory: client
 
       - name: Build Tauri bundle

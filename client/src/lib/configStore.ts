@@ -38,7 +38,11 @@ export type LexAIConfig = {
 };
 
 const DEFAULT_CONFIG: LexAIConfig = {
-  providers: [],
+  providers: [
+    { id: "openai", name: "OpenAI", vendor: "openai", defaultModel: "gpt-4o-mini" },
+    { id: "gemini", name: "Google Gemini", vendor: "gemini", defaultModel: "gemini-1.5-flash" },
+    { id: "ollama", name: "Ollama (OpenAI Compatible)", vendor: "openai", defaultModel: "llama3.1", baseUrl: "http://localhost:11434/v1" }
+  ],
   modelMapping: {},
   preferences: {
     definitionLanguage: "en",
