@@ -1,0 +1,36 @@
+[package]
+name = "rpc_worker"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rpc_worker"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+once_cell.workspace = true
+qdrant-client.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+ort.workspace = true
+tokenizers.workspace = true
+ndarray.workspace = true
+pdf-extract = { path = "../../3rd/pdf-extract" }
+rand = "0.8"
+uuid = { version = "1", features = ["v4", "fast-rng"] }
+base64 = "0.22"
+time = { version = "0.3", features = ["formatting"] }
+parking_lot = "0.12"
+walkdir = "2"
+serde_with = "3"
+
+[features]
+default = []
+
+# Placeholder for embedding dependencies (to be updated once model integration is defined)
