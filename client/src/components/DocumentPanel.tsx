@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/tauri";
-import { ChangeEvent, useCallback, useState } from "react";
+import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useAppState } from "../state/AppState";
 import { useLocale } from "../state/LocaleContext";
 
@@ -11,6 +11,11 @@ export function DocumentPanel() {
   const isChinese = language === "zh-CN";
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
   const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
+  const cancelRef = useRef<boolean>(false);
+
+  useEffect(() => () => { cancelRef.current = true; }, []);
 
   const handleSelection = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
@@ -78,6 +83,40 @@ export function DocumentPanel() {
     [isChinese, setDocument],
   );
 
+  const handleMultiple = useCallback(async (files: FileList) => {
+    setBusy(true);
+    setProgress(0);
+    cancelRef.current = false;
+    const total = files.length;
+    for (let i = 0; i < total; i++) {
+      if (cancelRef.current) break;
+      const f = files[i]!;
+      try {
+        const arrayBuffer = await f.arrayBuffer();
+        const tempPath = await invoke<string>("store_temp_document", {
+          fileName: f.name,
+          contents: Array.from(new Uint8Array(arrayBuffer)),
+        });
+        const payload = await invoke<{
+          document_id: string;
+          extracted_text?: string | null;
+          message?: string | null;
+          status: string;
+        }>("upload_document", { filePath: tempPath, fileName: f.name });
+        if (payload?.document_id) {
+          // 简化处理：将最后一个上传的文档作为当前文档
+          if (i === total - 1) {
+            setDocument({ id: payload.document_id, text: payload.extracted_text ?? "", name: f.name });
+          }
+        }
+      } catch (err) {
+        console.error("Failed to upload", f.name, err);
+      }
+      setProgress(Math.round(((i + 1) / total) * 100));
+    }
+    setBusy(false);
+  }, [setDocument]);
+
   const handleSelectDocument = useCallback(
     (id: string) => {
       setMessage(null);
@@ -96,11 +135,29 @@ export function DocumentPanel() {
           }
         >
           <span>{isChinese ? "选择文件" : "Select file"}</span>
-          <input type="file" onChange={handleSelection} disabled={uploadStatus === "uploading"} />
+          <input
+            type="file"
+            multiple
+            onChange={async (e) => {
+              const list = e.target.files;
+              if (!list || list.length === 0) return;
+              if (list.length === 1) {
+                await handleSelection(e as unknown as ChangeEvent<HTMLInputElement>);
+              } else {
+                setMessage(null);
+                await handleMultiple(list);
+              }
+              e.currentTarget.value = "";
+            }}
+            disabled={uploadStatus === "uploading" || busy}
+          />
         </label>
       </header>
       {uploadStatus === "uploading" && (
         <p className="panel__status">{isChinese ? "正在上传…" : "Uploading…"}</p>
+      )}
+      {busy && (
+        <p className="panel__status">{isChinese ? `正在批量上传… ${progress ?? 0}%` : `Batch uploading… ${progress ?? 0}%`}</p>
       )}
       {uploadStatus === "success" && message && <p className="panel__status success">{message}</p>}
       {uploadStatus === "error" && message && <p className="panel__status error">{message}</p>}
