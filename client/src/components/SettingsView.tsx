@@ -568,16 +568,19 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
                     throw new Error(isChinese ? "请先填写名称与默认模型。" : "Please fill name and default model first.");
                   }
                   const { testProvider } = await import("../lib/llmClient");
+                  setSavingProvider(true);
                   await testProvider(active, providerForm.apiKey.trim() || undefined);
                   setInfo(isChinese ? "连接正常。" : "Connection verified.");
                 } catch (err) {
                   const detail = err instanceof Error ? err.message : String(err);
                   setError(detail);
+                } finally {
+                  setSavingProvider(false);
                 }
               }}
               disabled={savingProvider}
             >
-              {isChinese ? "测试连接" : "Test Connection"}
+              {savingProvider ? (isChinese ? "测试中…" : "Testing…") : (isChinese ? "测试连接" : "Test Connection")}
             </button>
             <button type="submit" disabled={savingProvider}>
               {savingProvider

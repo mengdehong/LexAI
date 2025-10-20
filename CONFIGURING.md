@@ -70,6 +70,18 @@ Each feature uses a named operation that can point to a different provider/model
 2. Optionally override the model name per operation. Leaving the field blank falls back to the provider’s default model.
 3. Model changes are saved when the input loses focus.
 
+
+### Provider Presets
+
+LexAI includes three starter presets in the UI by default:
+
+- OpenAI (id: openai)
+- Google Gemini (id: gemini)
+- Ollama (OpenAI-compatible, id: ollama, baseUrl: http://localhost:11434/v1)
+
+These are editable; you may add more entries for other OpenAI-compatible endpoints.
+
+
 ## Environment Variables Reference
 
 Environment variables are resolved after Stronghold and are useful for CI/CD, shared environments, or when you do not want to persist credentials locally.
