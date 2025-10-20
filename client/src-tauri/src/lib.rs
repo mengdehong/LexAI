@@ -405,12 +405,12 @@ async fn fetch_backend_status(
 ) -> Result<String, String> {
     let client = rpc_manager.ensure_client(&app).await?;
     let response = client
-        .call("ping", json!({}))
+        .call("health", json!({}))
         .await?
         .get("status")
         .and_then(JsonValue::as_str)
         .map(str::to_string)
-        .ok_or_else(|| "Invalid ping response".to_string())?;
+        .ok_or_else(|| "Invalid health response".to_string())?;
     Ok(response)
 }
 
