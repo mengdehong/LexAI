@@ -9,6 +9,9 @@ on:
       tag_name:
         description: "Tag name to build/release (e.g., v0.2.1)"
         required: true
+      pdf_extract_url:
+        description: "Optional: Git URL for 3rd/pdf-extract submodule for legacy tags"
+        required: false
 
 permissions:
   contents: write
@@ -51,6 +54,32 @@ jobs:
         shell: bash
         run: |
           echo "Initializing submodules from .gitmodules"
+
+      - name: Populate 3rd/pdf-extract for legacy tags
+        if: >-
+          hashFiles('.gitmodules') == '' &&
+          steps.vars.outputs.tag != ''
+        shell: bash
+        run: |
+          # Some legacy tags stored 3rd/pdf-extract as a gitlink without a .gitmodules entry.
+          # If the entry is a gitlink (mode 160000), convert it to a real directory by fetching from provided URL or main.
+          set -euo pipefail
+          git ls-tree "$GITHUB_SHA" 3rd/pdf-extract || true
+          mode=$(git ls-tree "$GITHUB_SHA" 3rd/pdf-extract | awk '{print $1}') || true
+          if [ "$mode" = "160000" ]; then
+            echo "Detected gitlink at 3rd/pdf-extract in tag ${GITHUB_SHA}";
+            rm -rf 3rd/pdf-extract
+            if [ -n "${{ inputs.pdf_extract_url }}" ]; then
+              git clone --depth=1 "${{ inputs.pdf_extract_url }}" 3rd/pdf-extract
+            else
+              echo "No pdf_extract_url provided; attempting to clone from current repo if mirrored under 3rd/pdf-extract"
+              # Fallback: try to checkout from main tree if available
+              git fetch --no-tags origin main --depth=1 || true
+              git checkout origin/main -- 3rd/pdf-extract || {
+                echo "ERROR: 3rd/pdf-extract gitlink cannot be resolved; provide pdf_extract_url input." >&2; exit 1; }
+            fi
+          fi
+
           git submodule sync --recursive
           git submodule update --init --recursive
 
