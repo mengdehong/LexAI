@@ -82,6 +82,45 @@ async function resolveApiKey(provider: ProviderConfig): Promise<string> {
   return "";
 }
 
+export async function testProvider(provider: ProviderConfig, keyOverride?: string): Promise<void> {
+  // Never print or return the API key.
+  const vendor = provider.vendor;
+  const baseUrl = normalizeBaseUrl(
+    provider.baseUrl,
+    vendor === "gemini" ? "https://generativelanguage.googleapis.com/v1beta" : "https://api.openai.com/v1",
+  );
+
+  let apiKey = (keyOverride ?? "").trim();
+  if (!apiKey) {
+    apiKey = await resolveApiKey(provider);
+  }
+  if (!apiKey) {
+    const hint = `Missing API key for provider "${provider.name}" (id: ${provider.id}). Open Settings and set the key, or define VITE_${provider.id
+      .replace(/[^a-z0-9]/gi, "_")
+      .toUpperCase()}_API_KEY.`;
+    throw new Error(hint);
+  }
+
+  if (vendor === "gemini") {
+    const resp = await fetch(`${baseUrl}/models?key=${encodeURIComponent(apiKey)}`);
+    if (!resp.ok) {
+      const detail = await resp.text();
+      throw new Error(detail || `Gemini API connection failed (HTTP ${resp.status}).`);
+    }
+    return;
+  }
+
+  // Default to OpenAI-compatible
+  const resp = await fetch(`${baseUrl}/models`, {
+    method: "GET",
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!resp.ok) {
+    const detail = await resp.text();
+    throw new Error(detail || `OpenAI-compatible API connection failed (HTTP ${resp.status}).`);
+  }
+}
+
 async function callOpenAI(
   provider: ProviderConfig,
   model: string,
