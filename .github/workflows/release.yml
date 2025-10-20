@@ -43,17 +43,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ steps.vars.outputs.tag }}
-          submodules: recursive
           fetch-depth: 0
-
-      - name: Ensure 3rd/pdf-extract is present (fallback)
-        shell: bash
-        run: |
-          if [ ! -f 3rd/pdf-extract/Cargo.toml ]; then
-            echo "3rd/pdf-extract missing in tag; vendoring from main as fallback"
-            git fetch --no-tags origin main --depth=1
-            git checkout origin/main -- 3rd/pdf-extract
-          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
