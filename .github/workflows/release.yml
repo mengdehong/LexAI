@@ -94,8 +94,6 @@ jobs:
       - name: Sync RPC worker resources
         shell: bash
         run: |
-          tagName: ${{ steps.vars.outputs.tag }}
-
           rm -rf client/src-tauri/resources/rpc_server
           mkdir -p client/src-tauri/resources
           cp -R backend/dist/rpc_server client/src-tauri/resources/
@@ -108,7 +106,7 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         with:
           projectPath: client
-          tagName: ${{ github.ref_name }}
+          tagName: ${{ steps.vars.outputs.tag }}
           releaseDraft: false
           prerelease: false
           releaseName: "LexAI ${{ github.ref_name }}"
