@@ -13,8 +13,8 @@ export function DiagnosticsPanel({ onClose }: { onClose?: () => void }) {
     setLoading(true);
     setError(null);
     try {
-      const result = await invoke<Record<string, unknown>>("fetch_backend_health");
-      setPayload(result);
+      const health = await invoke<Record<string, unknown>>("fetch_backend_health");
+      setPayload(health || {});
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       setError(detail);
@@ -30,6 +30,7 @@ export function DiagnosticsPanel({ onClose }: { onClose?: () => void }) {
 
   return (
     <section className="panel">
+
       <header className="panel__header">
         <h2>{isChinese ? "诊断信息" : "Diagnostics"}</h2>
         <div style={{ display: "flex", gap: 8 }}>
