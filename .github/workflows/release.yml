@@ -4,6 +4,15 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Tag name to build/release (e.g., v0.2.1)"
+        required: true
+      pdf_extract_url:
+        description: "Optional: Git URL for 3rd/pdf-extract submodule for legacy tags"
+        required: false
+        default: "https://github.com/jrmuizel/pdf-extract"
 
 permissions:
   contents: write
@@ -24,8 +33,71 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
+      - name: Resolve release tag
+        id: vars
+        shell: bash
+        run: |
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ inputs.tag_name }}" >> "$GITHUB_OUTPUT"
+          fi
+          DEFAULT_PDF_URL="https://github.com/jrmuizel/pdf-extract"
+          if [[ -n "${{ inputs.pdf_extract_url }}" ]]; then
+            echo "pdf_url=${{ inputs.pdf_extract_url }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "pdf_url=${DEFAULT_PDF_URL}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.vars.outputs.tag }}
+          fetch-depth: 0
+          submodules: false
+
+      - name: Init submodules (if any)
+        if: hashFiles('.gitmodules') != ''
+        shell: bash
+        run: |
+          echo "Initializing submodules from .gitmodules"
+
+      - name: Populate 3rd/pdf-extract for legacy tags
+        if: >-
+          hashFiles('.gitmodules') == '' &&
+          steps.vars.outputs.tag != ''
+        shell: bash
+        run: |
+          # Some legacy tags stored 3rd/pdf-extract as a gitlink without a .gitmodules entry.
+          # If the entry is a gitlink (mode 160000), replace it by cloning from a known URL.
+          set -euo pipefail
+          git ls-tree "$GITHUB_SHA" 3rd/pdf-extract || true
+          mode=$(git ls-tree "$GITHUB_SHA" 3rd/pdf-extract | awk '{print $1}') || true
+          if [ "$mode" = "160000" ]; then
+            echo "Detected gitlink at 3rd/pdf-extract in tag ${GITHUB_SHA}";
+            rm -rf 3rd/pdf-extract
+            git clone --depth=1 "${{ steps.vars.outputs.pdf_url }}" 3rd/pdf-extract
+          fi
+
+      - name: Verify release source tree
+        shell: bash
+        run: |
+          missing=0
+          for p in \
+            backend/rust_core/Cargo.toml \
+            3rd/pdf-extract/Cargo.toml \
+            backend/rpc_server.spec \
+            backend/build.py; do
+            if [ ! -f "$p" ]; then
+              echo "ERROR: required file missing in tag: $p"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo "This tag does not contain all required sources (e.g., 3rd/pdf-extract).\nPlease create a new tag from a commit that includes these files, or trigger Run workflow with such a tag." >&2
+            exit 1
+          fi
+
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -60,7 +132,22 @@ jobs:
           VENV_PYTHON=$(python -c "import pathlib, sys; root = pathlib.Path('backend/.venv').resolve(); path = root / ('Scripts/python.exe' if sys.platform.startswith('win') else 'bin/python'); print(path)")
           echo "VENV_PYTHON=$VENV_PYTHON" >> $GITHUB_ENV
           "$VENV_PYTHON" -m pip install --upgrade pip
-          "$VENV_PYTHON" -m pip install -r backend/requirements-build.txt
+          # Prefer CPU-only torch on Linux to reduce bundle size and copy time
+          if [ "${{ matrix.platform.os }}" = 'ubuntu-latest' ]; then
+            "$VENV_PYTHON" -m pip install --extra-index-url https://download.pytorch.org/whl/cpu 'torch==2.9.0+cpu'
+          fi
+          if [ -f backend/requirements-build.txt ]; then
+            "$VENV_PYTHON" -m pip install -r backend/requirements-build.txt
+          else
+            "$VENV_PYTHON" -m pip install \
+              maturin==1.9.6 \
+              pyinstaller \
+              'pydantic>=2.12,<3' \
+              'pydantic-settings>=2.6,<3' \
+              'qdrant-client>=1.15.1,<2' \
+              'langchain-text-splitters>=0.2.2,<0.3' \
+              'sentence-transformers>=3,<4'
+          fi
 
       - name: Build rust_core extension
         shell: bash
@@ -79,6 +166,25 @@ jobs:
         run: |
           rm -rf client/src-tauri/resources/rpc_server
           mkdir -p client/src-tauri/resources
+          # Portable copy that works on macOS rsync 2.6.9 and Windows Git Bash
+          tar -C backend/dist -cf - rpc_server | tar -C client/src-tauri/resources -xf -
+          echo "RPC worker copy done"
+          ls -la client/src-tauri/resources/rpc_server | head -n 20
+
+      - name: Verify RPC worker artifact
+        shell: bash
+        run: |
+          set -euxo pipefail
+          if [ ! -d backend/dist/rpc_server ]; then
+            echo "ERROR: PyInstaller output not found at backend/dist/rpc_server"
+            echo "Listing backend/dist contents (if any):"
+            ls -la backend/dist || true
+            echo "Searching for rpc_server directory under backend/:"
+            find backend -maxdepth 3 -type d -name 'rpc_server' -print || true
+            exit 1
+          fi
+          ls -la backend/dist/rpc_server
+
           cp -R backend/dist/rpc_server client/src-tauri/resources/
 
       - name: Install frontend dependencies
@@ -89,12 +195,12 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         with:
           projectPath: client
-          tagName: ${{ github.ref_name }}
+          tagName: ${{ steps.vars.outputs.tag }}
           releaseDraft: false
           prerelease: false
-          releaseName: "LexAI ${{ github.ref_name }}"
+          releaseName: "LexAI ${{ steps.vars.outputs.tag }}"
           releaseBody: |
-            ## LexAI ${{ github.ref_name }} – Public Preview
+            ## LexAI ${{ steps.vars.outputs.tag }} – Public Preview
 
             Welcome to the first public preview of LexAI! This build includes:
 
