@@ -150,13 +150,6 @@ export function DocumentPanel() {
           <input
             type="file"
             multiple
-          {busy && (
-            <div style={{ display: "flex", gap: 8, marginLeft: 12 }}>
-              <button type="button" disabled={!busy} onClick={() => { cancelRef.current = true; }}>
-                {isChinese ? "取消批量" : "Cancel batch"}
-              </button>
-            </div>
-          )}
             onChange={async (e) => {
               const list = e.target.files;
               if (!list || list.length === 0) return;
@@ -178,6 +171,14 @@ export function DocumentPanel() {
       {busy && (
         <>
           <p className="panel__status">{isChinese ? `正在批量上传… ${progress ?? 0}%` : `Batch uploading… ${progress ?? 0}%`}</p>
+        {busy && (
+          <div style={{ display: "flex", gap: 8 }}>
+            <button type="button" disabled={!busy} onClick={() => { cancelRef.current = true; }}>
+              {isChinese ? "取消批量" : "Cancel batch"}
+            </button>
+          </div>
+        )}
+
           <ul className="panel__list">
             <li>
               <strong>{isChinese ? "批量明细" : "Batch details"}</strong>
