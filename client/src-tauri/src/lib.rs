@@ -234,7 +234,19 @@ struct SecretsManager {
     inner: Arc<AsyncMutex<StrongholdInner>>,
 }
 
+#[derive(Debug, Deserialize)]
+struct BatchFileSpec {
+    file_path: String,
+    file_name: String,
+}
+
+#[derive(Clone, Default)]
+struct BatchState {
+    cancel: Arc<std::sync::atomic::AtomicBool>,
+}
+
 impl SecretsManager {
+
     fn new(inner: StrongholdInner) -> Self {
         Self {
             inner: Arc::new(AsyncMutex::new(inner)),
@@ -258,6 +270,8 @@ impl SecretsManager {
                 .insert(record_key.clone(), sanitized.as_bytes().to_vec(), None)
                 .map_err(|err| err.to_string())?;
         }
+
+
 
         guard.stronghold.save().map_err(|err| err.to_string())
     }
@@ -456,6 +470,8 @@ async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
         command.creation_flags(0x08000000);
     }
 
+
+
     let child = command
         .spawn()
         .map_err(|err| format!("Failed to spawn RPC worker: {err}"))?;
@@ -468,14 +484,27 @@ async fn fetch_backend_status(
     rpc_manager: State<'_, RpcManager>,
 ) -> Result<String, String> {
     let client = rpc_manager.ensure_client(&app).await?;
-    let response = client
-        .call("health", json!({}))
-        .await?
-        .get("status")
-        .and_then(JsonValue::as_str)
-        .map(str::to_string)
-        .ok_or_else(|| "Invalid health response".to_string())?;
-    Ok(response)
+    // Try health first; fall back to ping for older workers
+    match client.call("health", json!({})).await {
+        Ok(val) => {
+            let status = val
+                .get("status")
+                .and_then(JsonValue::as_str)
+                .map(str::to_string)
+                .ok_or_else(|| "Invalid health response".to_string())?;
+            Ok(status)
+        }
+        Err(_) => {
+            let pong = client
+                .call("ping", json!({}))
+                .await?
+                .get("status")
+                .and_then(JsonValue::as_str)
+                .map(str::to_string)
+                .ok_or_else(|| "Invalid ping response".to_string())?;
+            Ok(pong)
+        }
+    }
 }
 
 #[tauri::command]
@@ -526,7 +555,7 @@ async fn upload_document(
     rpc_manager: State<'_, RpcManager>,
 ) -> Result<UploadPayload, String> {
     let client = rpc_manager.ensure_client(&app).await?;
-    let response = client
+    let response = match client
         .call(
             "upload_document",
             json!({
@@ -534,10 +563,28 @@ async fn upload_document(
                 "file_name": file_name,
             }),
         )
-        .await?;
+        .await
+    {
+        Ok(val) => Ok(val),
+        Err(e) => {
+            if e.contains("Method not found") {
+                client
+                    .call(
+                        "upload",
+                        json!({
+                            "file_path": file_path,
+                            "file_name": file_name,
+                        }),
+                    )
+                    .await
+            } else {
+                Err(e)
+            }
+        }
+    }?;
 
-    let mut payload: UploadPayload =
-        serde_json::from_value(response).map_err(|err| format!("Invalid RPC response: {err}"))?;
+    let mut payload: UploadPayload = serde_json::from_value(response)
+        .map_err(|err| format!("Invalid RPC response: {err}"))?;
 
     if payload.document_id.trim().is_empty() {
         return Err("Upload failed: missing document_id".to_string());
@@ -1099,6 +1146,7 @@ pub fn run() {
                 .map_err(|err| -> Box<dyn Error> { Box::new(err) })?;
             app.manage(AppState { pool });
             app.manage(RpcManager::new());
+            app.manage(BatchState::default());
 
             if let Some(window) = app.get_webview_window("main") {
                 let manager_handle = app.state::<RpcManager>().client_handle();

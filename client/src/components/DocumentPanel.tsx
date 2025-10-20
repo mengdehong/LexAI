@@ -13,6 +13,7 @@ export function DocumentPanel() {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
+  const [fileStatuses, setFileStatuses] = useState<Record<string, "queued"|"ok"|"error">>({});
   const cancelRef = useRef<boolean>(false);
 
   useEffect(() => () => { cancelRef.current = true; }, []);
@@ -85,9 +86,17 @@ export function DocumentPanel() {
 
   const handleMultiple = useCallback(async (files: FileList) => {
     setBusy(true);
-    setProgress(0);
+    setMessage(null);
     cancelRef.current = false;
     const total = files.length;
+    const initial: Record<string, "queued"|"ok"|"error"> = {};
+    for (let i = 0; i < total; i++) {
+      const f = files[i]!;
+      initial[f.name] = "queued";
+    }
+    setFileStatuses(initial);
+    setProgress(0);
+
     for (let i = 0; i < total; i++) {
       if (cancelRef.current) break;
       const f = files[i]!;
@@ -104,12 +113,15 @@ export function DocumentPanel() {
           status: string;
         }>("upload_document", { filePath: tempPath, fileName: f.name });
         if (payload?.document_id) {
-          // 简化处理：将最后一个上传的文档作为当前文档
+          setFileStatuses((prev) => ({ ...prev, [f.name]: "ok" }));
           if (i === total - 1) {
             setDocument({ id: payload.document_id, text: payload.extracted_text ?? "", name: f.name });
           }
+        } else {
+          setFileStatuses((prev) => ({ ...prev, [f.name]: "error" }));
         }
       } catch (err) {
+        setFileStatuses((prev) => ({ ...prev, [f.name]: "error" }));
         console.error("Failed to upload", f.name, err);
       }
       setProgress(Math.round(((i + 1) / total) * 100));
@@ -145,6 +157,11 @@ export function DocumentPanel() {
                 await handleSelection(e as unknown as ChangeEvent<HTMLInputElement>);
               } else {
                 setMessage(null);
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" disabled={!busy} onClick={() => { cancelRef.current = true; }}>
+            {isChinese ? "取消批量" : "Cancel batch"}
+          </button>
+        </div>
                 await handleMultiple(list);
               }
               e.currentTarget.value = "";
@@ -157,7 +174,23 @@ export function DocumentPanel() {
         <p className="panel__status">{isChinese ? "正在上传…" : "Uploading…"}</p>
       )}
       {busy && (
-        <p className="panel__status">{isChinese ? `正在批量上传… ${progress ?? 0}%` : `Batch uploading… ${progress ?? 0}%`}</p>
+        <>
+          <p className="panel__status">{isChinese ? `正在批量上传… ${progress ?? 0}%` : `Batch uploading… ${progress ?? 0}%`}</p>
+          <ul className="panel__list">
+            <li>
+              <strong>{isChinese ? "批量明细" : "Batch details"}</strong>
+              <div className="panel__list-subtitle">
+                {Object.keys(fileStatuses).length === 0 ? (isChinese ? "准备中…" : "Preparing…") : (
+                  <ul>
+                    {Object.entries(fileStatuses).map(([name, st]) => (
+                      <li key={name}>{name} — {st}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </li>
+          </ul>
+        </>
       )}
       {uploadStatus === "success" && message && <p className="panel__status success">{message}</p>}
       {uploadStatus === "error" && message && <p className="panel__status error">{message}</p>}

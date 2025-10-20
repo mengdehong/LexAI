@@ -124,10 +124,18 @@ def ensure_collection(client: QdrantClient, vector_size: int) -> None:
 async def process_and_embed_document(file_path: str, document_id: str) -> str:
     settings = get_settings()
 
-    try:
-        extracted_text = await asyncio.to_thread(rust_core.extract_text, file_path)
-    except Exception as exc:  # pragma: no cover - rust_core failure surfaces at runtime
-        raise _classify_extraction_failure(exc) from exc
+    # Lightweight support for plain text/markdown without invoking rust_core
+    ext = Path(file_path).suffix.lower()
+    if ext in {".md", ".markdown", ".txt"}:
+        try:
+            extracted_text = Path(file_path).read_text(encoding="utf-8", errors="ignore")
+        except Exception as exc:
+            raise _classify_extraction_failure(exc) from exc
+    else:
+        try:
+            extracted_text = await asyncio.to_thread(rust_core.extract_text, file_path)
+        except Exception as exc:  # pragma: no cover - rust_core failure surfaces at runtime
+            raise _classify_extraction_failure(exc) from exc
     text = extracted_text.strip()
 
     if not text:
