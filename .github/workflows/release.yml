@@ -42,6 +42,9 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ steps.vars.outputs.tag }}
+          submodules: recursive
+          fetch-depth: 0
 
       - name: Ensure 3rd/pdf-extract is present (fallback)
         shell: bash
@@ -51,10 +54,6 @@ jobs:
             git fetch --no-tags origin main --depth=1
             git checkout origin/main -- 3rd/pdf-extract
           fi
-
-          ref: ${{ steps.vars.outputs.tag }}
-          submodules: recursive
-          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
