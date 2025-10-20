@@ -32,17 +32,26 @@ use tauri_plugin_stronghold::stronghold::Stronghold;
 use tokio::{
     fs as tokio_fs,
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    process::{Child, ChildStdin, ChildStdout},
+    process::{Child, ChildStdin, ChildStdout, ChildStderr},
     sync::{oneshot, Mutex as AsyncMutex},
     time::{timeout, Duration},
 };
 
 use iota_stronghold::{Client as StrongholdClient, ClientError};
 
+#[derive(Serialize)]
+struct RpcDiagnostics {
+    running: bool,
+    exit_status: Option<i32>,
+    stderr_tail: Option<String>,
+}
+
 struct RpcClient {
     child: Arc<AsyncMutex<Child>>,
     stdin: Arc<AsyncMutex<ChildStdin>>,
     stdout: Arc<AsyncMutex<BufReader<ChildStdout>>>,
+    stderr: Option<Arc<AsyncMutex<BufReader<ChildStderr>>>>,
+    stderr_buf: Arc<AsyncMutex<Vec<String>>>,
     next_id: AtomicU64,
     response_timeout: Duration,
 }
@@ -57,14 +66,46 @@ impl RpcClient {
             .stdout
             .take()
             .ok_or_else(|| "Child process stdout unavailable".to_string())?;
+        let stderr = child.stderr.take();
 
-        Ok(Self {
+        let client = Self {
             child: Arc::new(AsyncMutex::new(child)),
             stdin: Arc::new(AsyncMutex::new(stdin)),
             stdout: Arc::new(AsyncMutex::new(BufReader::new(stdout))),
+            stderr: stderr.map(|s| Arc::new(AsyncMutex::new(BufReader::new(s)))),
+            stderr_buf: Arc::new(AsyncMutex::new(Vec::with_capacity(64))),
             next_id: AtomicU64::new(1),
             response_timeout,
-        })
+        };
+
+        if let Some(stderr_reader) = &client.stderr {
+            let stderr_reader = stderr_reader.clone();
+            let buf = client.stderr_buf.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    let read = {
+                        let mut s = stderr_reader.lock().await;
+                        s.read_line(&mut line).await
+                    };
+                    match read {
+                        Ok(0) => break,
+                        Ok(_) => {
+                            let mut b = buf.lock().await;
+                            b.push(line.trim_end_matches(['\r', '\n']).to_string());
+                            if b.len() > 100 {
+                                let overflow = b.len() - 100;
+                                b.drain(0..overflow);
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+        }
+
+        Ok(client)
     }
 
     async fn call(&self, method: &str, params: JsonValue) -> Result<JsonValue, String> {
@@ -132,6 +173,25 @@ impl RpcClient {
     }
 }
 
+impl RpcClient {
+    async fn diagnostics(&self) -> RpcDiagnostics {
+        let mut running = true;
+        let mut exit_status = None;
+        if let Ok(mut child) = self.child.try_lock() {
+            if let Ok(Some(status)) = child.try_wait() {
+                running = false;
+                exit_status = status.code();
+            }
+        }
+        let stderr_tail = {
+            let buf = self.stderr_buf.lock().await;
+            if buf.is_empty() { None } else { Some(buf.join("\n")) }
+        };
+        RpcDiagnostics { running, exit_status, stderr_tail }
+    }
+}
+
+
 struct AppState {
     pool: SqlitePool,
 }
@@ -148,6 +208,7 @@ struct StrongholdInner {
 impl StrongholdInner {
     fn ensure_client(&self) -> Result<StrongholdClient, String> {
         match self.stronghold.inner().get_client(&self.client_path) {
+
             Ok(client) => Ok(client),
             Err(ClientError::ClientDataNotPresent) => {
                 match self.stronghold.inner().load_client(&self.client_path) {
@@ -355,6 +416,8 @@ async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
                 "RPC resource internal directory missing at {}",
                 internal_dir.display()
             ));
+
+
         }
     }
 
@@ -370,6 +433,7 @@ async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
     command.kill_on_drop(true);
     command.stdin(std::process::Stdio::piped());
     command.stdout(std::process::Stdio::piped());
+    command.stderr(std::process::Stdio::piped());
     command.env("QDRANT__STORAGE", storage_dir.to_string_lossy().to_string());
 
     #[cfg(target_os = "linux")]
@@ -411,6 +475,16 @@ async fn fetch_backend_status(
         .and_then(JsonValue::as_str)
         .map(str::to_string)
         .ok_or_else(|| "Invalid health response".to_string())?;
+    Ok(response)
+}
+
+#[tauri::command]
+async fn fetch_backend_health(
+    app: tauri::AppHandle,
+    rpc_manager: State<'_, RpcManager>,
+) -> Result<JsonValue, String> {
+    let client = rpc_manager.ensure_client(&app).await?;
+    let response = client.call("health", json!({})).await?;
     Ok(response)
 }
 
@@ -1043,6 +1117,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             fetch_backend_status,
+            fetch_backend_health,
             search_term_contexts,
             store_temp_document,
             upload_document,
@@ -1058,7 +1133,8 @@ pub fn run() {
             submit_review_result,
             save_api_key,
             get_api_key,
-            has_api_key
+            has_api_key,
+            fetch_backend_health
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
