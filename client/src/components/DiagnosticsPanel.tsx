@@ -13,8 +13,11 @@ export function DiagnosticsPanel({ onClose }: { onClose?: () => void }) {
     setLoading(true);
     setError(null);
     try {
-      const health = await invoke<Record<string, unknown>>("fetch_backend_health");
-      setPayload(health || {});
+      const [health, diag] = await Promise.all([
+        invoke<Record<string, unknown>>("fetch_backend_health"),
+        invoke<Record<string, unknown>>("fetch_backend_diagnostics").catch(() => ({})),
+      ]);
+      setPayload({ ...(health || {}), diagnostics: diag || {} });
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       setError(detail);
@@ -36,6 +39,24 @@ export function DiagnosticsPanel({ onClose }: { onClose?: () => void }) {
         <div style={{ display: "flex", gap: 8 }}>
           <button type="button" onClick={() => void load()} disabled={loading}>
             {isChinese ? "刷新" : "Refresh"}
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              setLoading(true);
+              setError(null);
+              try {
+                await invoke("restart_backend");
+                await load();
+              } catch (err) {
+                setError(err instanceof Error ? err.message : String(err));
+              } finally {
+                setLoading(false);
+              }
+            }}
+            disabled={loading}
+          >
+            {isChinese ? "重启" : "Restart"}
           </button>
           {onClose && (
             <button type="button" onClick={onClose}>

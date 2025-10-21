@@ -526,6 +526,27 @@ async fn fetch_backend_health(
 }
 
 #[tauri::command]
+async fn fetch_backend_diagnostics(
+    rpc_manager: State<'_, RpcManager>,
+    app: tauri::AppHandle,
+) -> Result<RpcDiagnostics, String> {
+    let client = rpc_manager.ensure_client(&app).await?;
+    Ok(client.diagnostics().await)
+}
+
+#[tauri::command]
+async fn restart_backend(
+    app: tauri::AppHandle,
+    rpc_manager: State<'_, RpcManager>,
+) -> Result<bool, String> {
+    let handle = rpc_manager.client_handle();
+    RpcManager::shutdown_with(handle).await;
+    // spawn new one
+    let _ = rpc_manager.ensure_client(&app).await?;
+    Ok(true)
+}
+
+#[tauri::command]
 async fn search_term_contexts(
     doc_id: String,
     term: String,
@@ -1174,6 +1195,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             fetch_backend_status,
             fetch_backend_health,
+            fetch_backend_diagnostics,
+            restart_backend,
             search_term_contexts,
             store_temp_document,
             upload_document,
