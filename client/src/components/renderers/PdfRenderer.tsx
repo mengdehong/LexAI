@@ -15,7 +15,11 @@ export function PdfRenderer({ sourceBytes }: PdfRendererProps) {
       try {
         const bytes = sourceBytes;
         const pdfjs: any = await import("pdfjs-dist");
-        const loadingTask = pdfjs.getDocument({ data: bytes, disableWorker: true });
+        const workerUrl = (await import("pdfjs-dist/build/pdf.worker.mjs?url")).default as string;
+        if (pdfjs && pdfjs.GlobalWorkerOptions) {
+          pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+        }
+        const loadingTask = pdfjs.getDocument({ data: bytes });
         const doc = await loadingTask.promise;
         if (cancelled) return;
         setPages(doc.numPages);
