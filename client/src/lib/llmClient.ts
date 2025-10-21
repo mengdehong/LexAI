@@ -82,6 +82,23 @@ async function resolveApiKey(provider: ProviderConfig): Promise<string> {
   return "";
 }
 
+
+function mapHttpErrorToHint(status: number, body: string, vendor: ProviderConfig["vendor"], baseUrl: string): string {
+  const generic = body || `HTTP ${status}`;
+  if (status === 401 || status === 403) {
+    return vendor === "gemini"
+      ? `Authentication failed (HTTP ${status}). Check your Gemini API key and project quotas.`
+      : `Authentication failed (HTTP ${status}). Check your API key and account permissions.`;
+  }
+  if (status === 404) {
+    return `Endpoint not found (HTTP 404). Verify base URL: ${baseUrl}/models`;
+  }
+  if (status >= 500) {
+    return `Provider service error (HTTP ${status}). Try again later or switch region.`;
+  }
+  return generic;
+}
+
 export async function testProvider(provider: ProviderConfig, keyOverride?: string): Promise<void> {
   // Never print or return the API key.
   const vendor = provider.vendor;
@@ -105,7 +122,8 @@ export async function testProvider(provider: ProviderConfig, keyOverride?: strin
     const resp = await fetch(`${baseUrl}/models?key=${encodeURIComponent(apiKey)}`);
     if (!resp.ok) {
       const detail = await resp.text();
-      throw new Error(detail || `Gemini API connection failed (HTTP ${resp.status}).`);
+      const hint = mapHttpErrorToHint(resp.status, detail, vendor, baseUrl);
+      throw new Error(hint);
     }
     return;
   }
@@ -117,7 +135,8 @@ export async function testProvider(provider: ProviderConfig, keyOverride?: strin
   });
   if (!resp.ok) {
     const detail = await resp.text();
-    throw new Error(detail || `OpenAI-compatible API connection failed (HTTP ${resp.status}).`);
+    const hint = mapHttpErrorToHint(resp.status, detail, provider.vendor, baseUrl);
+    throw new Error(hint);
   }
 }
 
