@@ -53,3 +53,10 @@
 
 ## 跟踪
 每个主题将作为一个史诗 (epic) 在 GitHub Projects 中通过 issue 进行跟踪。里程碑映射到 `phase-11.x` 标签。
+
+### 11) 实施结果小结（本次迭代）
+- P11-B：完成“测试连接”UX、错误提示映射、Provider 预设与环境变量映射文档；Stronghold 迁移与读取。
+- P11-C：完成批量上传后台化（start_batch_upload/cancel_batch），进度事件 batch://progress，前端订阅并展示实时进度与 per-file 状态；.md/.txt 轻量提取；方法名兼容回退。
+- P11-A：新增 fetch_backend_diagnostics/restart_backend；诊断面板新增重启与健康信息；stderr 缓冲接入。
+- P11-E：初步收紧 Capabilities（移除 opener 权限）。
+- P11-F：修正 CI 步骤与新增最小冒烟测试（health）。

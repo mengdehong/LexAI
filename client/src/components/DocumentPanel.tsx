@@ -7,7 +7,7 @@ import { useLocale } from "../state/LocaleContext";
 type UploadStatus = "idle" | "uploading" | "success" | "error";
 
 export function DocumentPanel() {
-  const { documentId, documents, setDocument, selectDocument } = useAppState();
+  const { documentId, documents, setDocument, selectDocument, removeDocument } = useAppState();
   const language = useLocale();
   const isChinese = language === "zh-CN";
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
@@ -227,6 +227,12 @@ export function DocumentPanel() {
           <li key={doc.id} className={doc.id === documentId ? "panel__list-item active" : "panel__list-item"}>
             <button
               type="button"
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                <button type="button" onClick={() => removeDocument(doc.id)}>
+                  {isChinese ? "删除" : "Delete"}
+                </button>
+              </div>
+
               className="doc-button"
               onClick={() => handleSelectDocument(doc.id)}
             >
