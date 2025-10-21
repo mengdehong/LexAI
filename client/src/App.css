@@ -1365,6 +1365,14 @@ button:disabled {
   background: linear-gradient(180deg, rgba(255,255,255,0.78), rgba(255,255,255,0.62));
   border-bottom: 1px solid rgba(0,0,0,0.06);
 }
+.mac-header .mantine-SegmentedControl-label {
+  font-family: inherit;
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0;
+  font-variant-east-asian: normal;
+  white-space: nowrap;
+}
 
 @media (prefers-color-scheme: dark) {
   .mac-header {

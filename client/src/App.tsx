@@ -281,7 +281,15 @@ function App() {
 
   const generatorLabel = definitionLanguage === "zh-CN" ? "AI 生成术语集" : "Generate with AI";
   const reviewLabel = definitionLanguage === "zh-CN" ? "复习" : "Review";
-  const reviewButtonText = reviewDueCount > 0 ? `${reviewLabel} (${reviewDueCount})` : reviewLabel;
+  const reviewButtonText = (() => {
+    if (reviewDueCount > 0) {
+      if (definitionLanguage === "zh-CN") {
+        return `${reviewLabel}（${reviewDueCount}）`; // 使用中文全角括号，避免视觉过窄
+      }
+      return `${reviewLabel} (${reviewDueCount})`;
+    }
+    return reviewLabel;
+  })();
 
   return (
     <LocaleProvider language={definitionLanguage}>
@@ -308,6 +316,8 @@ function App() {
                   { label: definitionLanguage === 'zh-CN' ? '设置' : 'Settings', value: 'settings' },
                 ]}
                 disabled={showOnboarding || generatorOpen}
+                fullWidth
+                style={{ width: 'min(60vw, 520px)', minWidth: 320 }}
               />
               <Button variant="default" onClick={() => setDiagnosticsOpen(true)} disabled={generatorOpen}>
                 {definitionLanguage === "zh-CN" ? "诊断" : "Diagnostics"}
