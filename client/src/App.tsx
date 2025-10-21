@@ -55,7 +55,7 @@ function App() {
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [generatorOpen, setGeneratorOpen] = useState(false);
   const [termbaseRefreshToken, setTermbaseRefreshToken] = useState(0);
-  const [reviewDueCount, setReviewDueCount] = useState(0);
+  const [, setReviewDueCount] = useState(0); // hidden in UI; keep setter for backend updates
   const previousView = useRef(activeView);
   const { documentId, documents, terms, setTerms, hydrateDocuments } = useAppState();
   const [readingScrollPosition, setReadingScrollPosition] = useState(0);
@@ -280,16 +280,9 @@ function App() {
   }, []);
 
   const generatorLabel = definitionLanguage === "zh-CN" ? "AI 生成术语集" : "Generate with AI";
-  const reviewLabel = definitionLanguage === "zh-CN" ? "复习" : "Review";
-  const reviewButtonText = (() => {
-    if (reviewDueCount > 0) {
-      if (definitionLanguage === "zh-CN") {
-        return `${reviewLabel}（${reviewDueCount}）`; // 使用中文全角括号，避免视觉过窄
-      }
-      return `${reviewLabel} (${reviewDueCount})`;
-    }
-    return reviewLabel;
-  })();
+  const reviewLabel = definitionLanguage === "zh-CN" ? "回顾" : "Review";
+  // 为保证中文在 SegmentedControl 中的视觉一致性，移除数量标记
+  const reviewButtonText = reviewLabel;
 
   return (
     <LocaleProvider language={definitionLanguage}>
