@@ -616,7 +616,10 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
                   <div>
                     <strong>{provider.name}</strong>
                     <span className="panel__list-subtitle">
-                      {isChinese ? "厂商" : "Vendor"}: {provider.vendor} • Model: {provider.defaultModel}
+                      {isChinese ? `厂商：${provider.vendor}` : `Vendor: ${provider.vendor}`}
+                    </span>
+                    <span className="panel__list-subtitle">
+                      {isChinese ? `默认模型：${provider.defaultModel}` : `Default model: ${provider.defaultModel}`}
                     </span>
                     {provider.baseUrl && <span className="panel__list-subtitle">Base URL: {provider.baseUrl}</span>}
                     <span className="panel__list-subtitle">
@@ -625,8 +628,8 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
                           ? "API Key 已安全存储。"
                           : "API key stored securely."
                         : isChinese
-                        ? "将从环境变量读取 API Key。"
-                        : "API key will be read from environment variables."}
+                        ? "从环境变量读取"
+                        : "Read from environment"}
                     </span>
                   </div>
                 <div className="provider-entry__actions">
