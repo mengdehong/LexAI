@@ -11,7 +11,7 @@
 }
 
 :root {
-  font-family: "LexAI Noto Sans SC", "Noto Sans SC", "Inter", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", "Segoe UI", Helvetica, Arial, sans-serif;
+  font-family: "LXGW WenKai", "LXGW WenKai Screen", "LXGW WenKai GB", "霞鹜文楷", "LexAI Noto Sans SC", "Noto Sans SC", "Inter", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", "Segoe UI", Helvetica, Arial, sans-serif;
   font-size: 16px;
   line-height: 1.5;
   font-weight: 400;
@@ -220,7 +220,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.75rem;
+  padding: 0.5rem; /* compact height for doc items */
   border-radius: 12px;
   background: var(--surface-alt);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
@@ -259,6 +259,29 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+}
+
+/* Document list compact styles */
+.doc-item {
+  min-height: 44px; /* reduce block height */
+}
+.doc-item__meta strong {
+  display: block;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis; /* keep single line */
+  max-width: 48vw;
+}
+.doc-item__actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: nowrap; /* keep delete in one line */
+}
+.doc-item__actions .pill-button {
+  white-space: nowrap;
 }
 
 .doc-button time {

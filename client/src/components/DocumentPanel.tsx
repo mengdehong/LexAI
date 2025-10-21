@@ -238,18 +238,18 @@ export function DocumentPanel() {
          >
             {documents.map((doc) => (
               <Carousel.Slide key={doc.id}>
-                <div className={doc.id === documentId ? "panel__list-item active" : "panel__list-item"}>
+                <div className={(doc.id === documentId ? "panel__list-item active" : "panel__list-item") + " doc-item"}>
                   <button
                     type="button"
                     className="doc-button"
                     onClick={() => handleSelectDocument(doc.id)}
                     aria-label={isChinese ? `打开 ${doc.name}` : `Open ${doc.name}`}
                   >
-                    <div className="doc-button__meta">
+                    <div className="doc-button__meta doc-item__meta">
                       <strong>{doc.name}</strong>
                     </div>
                   </button>
-                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                  <div className="doc-item__actions">
                     <button
                       type="button"
                       onClick={() => {
