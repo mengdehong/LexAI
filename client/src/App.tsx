@@ -339,23 +339,27 @@ function App() {
                 {definitionLanguage === "zh-CN" ? "设置" : "Settings"}
               </Button>
             </nav>
-            <button
-              type="button"
-              className="topbar__cta"
-              onClick={() => {
-                setGeneratorOpen(true);
-              }}
-              disabled={showOnboarding || generatorOpen}
-            >
-            <Button
-              type="button"
-              onClick={() => setDiagnosticsOpen(true)}
-              disabled={generatorOpen}
-            >
-              {definitionLanguage === "zh-CN" ? "诊断" : "Diagnostics"}
-            </Button>
-              {generatorLabel}
-            </button>
+            <div className="topbar__actions">
+              <Button
+                type="button"
+                onClick={() => setDiagnosticsOpen(true)}
+                disabled={generatorOpen}
+                aria-label="Open diagnostics"
+              >
+                {definitionLanguage === "zh-CN" ? "诊断" : "Diagnostics"}
+              </Button>
+              <button
+                type="button"
+                className="topbar__cta"
+                onClick={() => {
+                  setGeneratorOpen(true);
+                }}
+                disabled={showOnboarding || generatorOpen}
+                aria-label="Generate with AI"
+              >
+                {generatorLabel}
+              </button>
+            </div>
           </div>
         </header>
         <section className="app-shell__content" ref={contentRef} onScroll={handleContentScroll}>

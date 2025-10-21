@@ -217,39 +217,80 @@ export function DocumentPanel() {
         )}
         {uploadStatus === "success" && message && <p className="panel__status success">{message}</p>}
         {uploadStatus === "error" && message && <p className="panel__status error">{message}</p>}
-        <ul className="panel__list">
-          {documents.length === 0 && (
+        {documents.length === 0 ? (
+          <ul className="panel__list">
             <li>
               {isChinese
                 ? "尚未上传任何文档。点击上方“选择文件”或使用顶部“AI 生成术语集”快速开始。"
                 : "No documents uploaded yet. Use Select file above or the top bar Generate with AI button to get started."}
             </li>
-          )}
-          {documents.map((doc) => (
-            <li key={doc.id} className={doc.id === documentId ? "panel__list-item active" : "panel__list-item"}>
-              <div className="doc-button__row" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          </ul>
+        ) : (
+          <section aria-roledescription="carousel" className="relative">
+            <div className="flex items-center justify-between mb-2">
+              <div style={{ flex: 1 }} />
+              <div className="flex gap-2">
                 <button
                   type="button"
-                  className="doc-button"
-                  onClick={() => handleSelectDocument(doc.id)}
+                  className="pill-button"
+                  onClick={() => {
+                    const scroller = document.getElementById("doc-carousel");
+                    if (scroller) scroller.scrollBy({ left: -Math.max(scroller.clientWidth * 0.9, 320), behavior: 'smooth' });
+                  }}
                 >
-                  <div className="doc-button__meta">
-                    <strong>{doc.name}</strong>
-                    <span className="panel__list-subtitle">{doc.id}</span>
-                  </div>
-                  <time dateTime={new Date(doc.uploadedAt).toISOString()}>
-                    {new Date(doc.uploadedAt).toLocaleTimeString()}
-                  </time>
+                  {isChinese ? "向左" : "Prev"}
                 </button>
-                <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-                  <button type="button" onClick={() => removeDocument(doc.id)}>
-                    {isChinese ? "删除" : "Delete"}
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  className="pill-button"
+                  onClick={() => {
+                    const scroller = document.getElementById("doc-carousel");
+                    if (scroller) scroller.scrollBy({ left: Math.max(scroller.clientWidth * 0.9, 320), behavior: 'smooth' });
+                  }}
+                >
+                  {isChinese ? "向右" : "Next"}
+                </button>
               </div>
-            </li>
-          ))}
-        </ul>
+            </div>
+            <div
+              id="doc-carousel"
+              className="flex gap-3 overflow-x-auto scroll-smooth snap-x snap-mandatory px-1"
+              style={{ scrollbarWidth: 'thin' }}
+            >
+              {documents.map((doc) => (
+                <div key={doc.id} className="min-w-[300px] snap-start">
+                  <div className={doc.id === documentId ? "panel__list-item active" : "panel__list-item"}>
+                    <button
+                      type="button"
+                      className="doc-button"
+                      onClick={() => handleSelectDocument(doc.id)}
+                    >
+                      <div className="doc-button__meta">
+                        <strong>{doc.name}</strong>
+                        <span className="panel__list-subtitle">{doc.id}</span>
+                      </div>
+                      <time dateTime={new Date(doc.uploadedAt).toISOString()}>
+                        {new Date(doc.uploadedAt).toLocaleTimeString()}
+                      </time>
+                    </button>
+                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const ok = window.confirm(isChinese ? "确认删除该文档？" : "Delete this document?");
+                          if (ok) removeDocument(doc.id);
+                        }}
+                        className="pill-button negative"
+                      >
+                        {isChinese ? "删除" : "Delete"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
       </CardContent>
     </Card>
   );

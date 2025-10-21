@@ -54,6 +54,9 @@ body {
   background: rgba(15, 23, 42, 0.9);
   color: #f8fafc;
   box-shadow: 0 4px 16px rgba(15, 23, 42, 0.25);
+  position: sticky;
+  top: 0;
+  z-index: 40;
 }
 
 .topbar h1 {
@@ -82,6 +85,7 @@ body {
   display: flex;
   align-items: center;
   gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .topbar__cta {
