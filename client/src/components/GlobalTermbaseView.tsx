@@ -34,6 +34,7 @@ export function GlobalTermbaseView({ refreshToken = 0, onReviewCountChange }: Gl
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draft, setDraft] = useState({ term: "", definition: "", definition_cn: "" });
   const [savingId, setSavingId] = useState<number | null>(null);
@@ -80,6 +81,11 @@ export function GlobalTermbaseView({ refreshToken = 0, onReviewCountChange }: Gl
   }, [loadTerms]);
 
   useEffect(() => {
+    const handle = window.setTimeout(() => setDebouncedQuery(query), 150);
+    return () => window.clearTimeout(handle);
+  }, [query]);
+
+  useEffect(() => {
     if (refreshToken <= 0) {
       return;
     }
@@ -102,7 +108,7 @@ export function GlobalTermbaseView({ refreshToken = 0, onReviewCountChange }: Gl
     setQuery(event.target.value);
   };
 
-  const normalizedQuery = query.trim().toLowerCase();
+  const normalizedQuery = debouncedQuery.trim().toLowerCase();
   const filteredTerms = useMemo(() => {
     if (!normalizedQuery) {
       return terms;
@@ -505,7 +511,6 @@ export function GlobalTermbaseView({ refreshToken = 0, onReviewCountChange }: Gl
                   <th className="term-table__id" aria-hidden="true">ID</th>
                   <th>{isChinese ? "术语" : "Term"}</th>
                   <th>{isChinese ? "释义" : "Definition"}</th>
-                  <th>{isChinese ? "中文释义" : "Definition (ZH)"}</th>
                   <th>{isChinese ? "操作" : "Actions"}</th>
               </tr>
             </thead>
@@ -538,19 +543,6 @@ export function GlobalTermbaseView({ refreshToken = 0, onReviewCountChange }: Gl
                         />
                       ) : (
                         record.definition
-                      )}
-                    </td>
-                    <td>
-                      {isEditing ? (
-                        <textarea
-                          className="term-table__textarea"
-                          value={draft.definition_cn}
-                          onChange={handleDraftChange("definition_cn")}
-                          disabled={isSaving}
-                          placeholder="提供最精炼的中文释义"
-                        />
-                      ) : (
-                        record.definition_cn ?? "—"
                       )}
                     </td>
                     <td>

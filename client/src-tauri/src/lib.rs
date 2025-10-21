@@ -654,11 +654,17 @@ async fn restart_backend(
 
 #[tauri::command]
 async fn search_term_contexts(
-    doc_id: String,
+    doc_id: Option<String>,
+    docId: Option<String>,
+    document_id: Option<String>,
     term: String,
     app: tauri::AppHandle,
     rpc_manager: State<'_, RpcManager>,
 ) -> Result<Vec<String>, String> {
+    let doc_id = doc_id
+        .or(docId)
+        .or(document_id)
+        .ok_or_else(|| "missing 'doc_id' (accepted keys: doc_id, docId, document_id)".to_string())?;
     let client = rpc_manager.ensure_client(&app).await?;
     let response = client
         .call(

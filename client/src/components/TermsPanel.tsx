@@ -45,14 +45,31 @@ export function TermsPanel() {
       setSelectedTerm(term);
       setContexts([]);
       try {
+        // Guard: only invoke in Tauri runtime
+        if (!(window as any).__TAURI_INTERNALS__) {
+          setError(isChinese ? "请通过 Tauri 桌面应用运行以查看语境。" : "Run the desktop app via Tauri to view contexts.");
+          return;
+        }
         const contexts = await invoke<string[]>("search_term_contexts", {
+          // send multiple aliases to be backward/forward compatible with native layer
           doc_id: documentId,
+          docId: documentId,
+          document_id: documentId,
           term,
         });
         setContexts(contexts);
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err);
-        setError(detail);
+        // Map parameter error to friendly hint
+        if (/missing\s*'doc_id'|missing\s*doc_id|required key docId/i.test(detail)) {
+          setError(
+            isChinese
+              ? "参数缺失：未传入文档标识。请先选择文档后再点击查看语境。"
+              : "Missing parameter: document id. Select a document before viewing contexts.",
+          );
+        } else {
+          setError(detail);
+        }
       } finally {
         setLoadingTerm(null);
       }

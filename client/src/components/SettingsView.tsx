@@ -7,6 +7,7 @@ import type {
   ProviderVendor,
 } from "../lib/configStore";
 import { loadConfig, saveModelMapping, saveProviders, setDefinitionLanguage } from "../lib/configStore";
+import { DiagnosticsPanel } from "./DiagnosticsPanel";
 import { hasApiKey, saveApiKey } from "../lib/apiKeys";
 import { useLocale } from "../state/LocaleContext";
 
@@ -77,6 +78,7 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
   });
   const [storedApiKeys, setStoredApiKeys] = useState<Record<string, boolean>>({});
   const [clearStoredKey, setClearStoredKey] = useState(false);
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   const resetProviderForm = useCallback(() => {
     setProviderForm(INITIAL_PROVIDER_FORM);
@@ -740,6 +742,20 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
             </select>
           </label>
         </div>
+        <div className="settings-diagnostics">
+          <button
+            type="button"
+            className="settings-diagnostics-toggle"
+            onClick={() => setShowDiagnostics((v) => !v)}
+          >
+            {showDiagnostics ? (isChinese ? "关闭诊断" : "Hide Diagnostics") : (isChinese ? "打开诊断" : "Open Diagnostics")}
+          </button>
+        </div>
+        {showDiagnostics && (
+          <div className="settings-diagnostics-body">
+            <DiagnosticsPanel onClose={() => setShowDiagnostics(false)} />
+          </div>
+        )}
       </section>
     </div>
   );

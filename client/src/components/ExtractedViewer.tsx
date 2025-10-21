@@ -144,7 +144,12 @@ export function ExtractedViewer() {
                   return;
                 }
                 setError(null);
-                const contexts = await invoke<string[]>("search_term_contexts", { doc_id: documentId, term });
+                const contexts = await invoke<string[]>("search_term_contexts", {
+                  doc_id: documentId,
+                  docId: documentId,
+                  document_id: documentId,
+                  term,
+                });
                 setSelectedTerm(term);
                 setContexts(contexts);
               } catch (err) {
