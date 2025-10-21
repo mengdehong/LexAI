@@ -286,7 +286,7 @@ function App() {
   return (
     <LocaleProvider language={definitionLanguage}>
       <AppShell header={{ height: 64 }} padding="md">
-        <AppShell.Header>
+        <AppShell.Header className="mac-header">
           <Group justify="space-between" px="md" h="100%">
             <div>
               <h1 style={{ margin: 0, fontSize: 18 }}>{definitionLanguage === "zh-CN" ? "LexAI 工作台" : "LexAI Workbench"}</h1>
