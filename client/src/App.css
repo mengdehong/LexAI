@@ -525,12 +525,18 @@ button:disabled {
 .term-table td {
   padding: 0.75rem;
   border-bottom: 1px solid #e2e8f0;
-  text-align: left;
 }
 
 .term-table th {
   background: #e0e7ff;
   font-weight: 600;
+  text-align: center; /* 第一行居中 */
+}
+
+/* 第一列（可见的“术语”列）居中：ID 列为第 1 列且隐藏，术语列为第 2 列 */
+.term-table td:nth-child(2),
+.term-table th:nth-child(2) {
+  text-align: center;
 }
 
 .term-table__input,
@@ -689,6 +695,11 @@ button:disabled {
   display: flex;
   gap: 0.5rem;
   align-items: center;
+  flex-wrap: nowrap; /* 操作按钮不换行 */
+}
+
+.termbase-row-actions button {
+  white-space: nowrap; /* 保证“联想/编辑/删除”不换行 */
 }
 
 /* row actions styled via classes; no nth-of-type overrides */
