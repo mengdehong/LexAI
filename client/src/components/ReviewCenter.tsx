@@ -100,7 +100,6 @@ export function ReviewCenter({ onReviewCountChange }: ReviewCenterProps) {
     <section className="panel global-view">
       <header className="panel__header">
         <div>
-          <h2>{isChinese ? "复习中心" : "Review Center"}</h2>
           <p className="panel__subtitle">
             {isChinese
               ? "使用简易间隔复习，让术语记忆更牢固。"
