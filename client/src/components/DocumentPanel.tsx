@@ -242,11 +242,7 @@ export function DocumentPanel() {
                     >
                       <div className="doc-button__meta">
                         <strong>{doc.name}</strong>
-                        <span className="panel__list-subtitle">{doc.id}</span>
                       </div>
-                      <time dateTime={new Date(doc.uploadedAt).toISOString()}>
-                        {new Date(doc.uploadedAt).toLocaleTimeString()}
-                      </time>
                     </button>
                     <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
                       <button
