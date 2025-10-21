@@ -86,6 +86,8 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       setContexts([]);
     },
     [reset, setContexts, setDocumentId, setDocumentText, setSelectedTerm, setTerms],
+  );
+
   const removeDocument = useCallback(
     (id: string) => {
       setDocuments((prev) => prev.filter((doc) => doc.id !== id));
@@ -94,8 +96,6 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       }
     },
     [documentId, reset],
-  );
-
   );
 
   const setDocument = useCallback(
