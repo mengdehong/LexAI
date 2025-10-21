@@ -352,17 +352,7 @@ function App() {
           )}
         </section>
         </AppShell.Main>
-        <footer className="status-bar">
-          <span>
-            {documentId
-              ? definitionLanguage === "zh-CN"
-                ? `当前文档：${documentId}`
-                : `Active document: ${documentId}`
-              : definitionLanguage === "zh-CN"
-              ? "暂无选中文档"
-              : "No document selected"}
-          </span>
-        </footer>
+        {/* removed bottom status bar per request */}
         {generatorOpen && (
           <div className="onboarding-modal-layer">
             <OnboardingView
