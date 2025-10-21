@@ -1252,9 +1252,6 @@ pub fn run() {
             .build(),
         )
         .setup(|app| {
-            start_batch_upload,
-            cancel_batch,
-
             let data_dir = app
                 .path()
                 .app_data_dir()
