@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/tauri";
 import { useAppState } from "@/state/AppState";
 import { extractDocumentTerms } from "@/lib/llmClient";
 import { useLocale } from "@/state/LocaleContext";
@@ -85,7 +86,33 @@ export function ExtractedViewer() {
             {isChinese ? `已提取术语：${terms.length} 个` : `Extracted terms: ${terms.length}`}
           </div>
         )}
-        <div className="reading-panel__text" style={{ height: 560, overflow: 'auto' }} ref={scrollRef} dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
+        <div
+          className="reading-panel__text"
+          style={{ height: 560, overflow: 'auto' }}
+          ref={scrollRef}
+          dangerouslySetInnerHTML={{ __html: highlightedHtml }}
+          onClick={async (e) => {
+            const target = e.target as HTMLElement;
+            if (target && target.matches('mark.term-highlight')) {
+              const term = target.textContent?.trim();
+              if (!term || !documentId) return;
+              try {
+                // Guard: only invoke in Tauri runtime
+                if (!(window as any).__TAURI_INTERNALS__) {
+                  setError(isChinese ? "请通过 Tauri 运行应用以获取语境。" : "Run via Tauri to fetch contexts.");
+                  return;
+                }
+                setError(null);
+                const contexts = await invoke<string[]>("search_term_contexts", { doc_id: documentId, term });
+                setSelectedTerm(term);
+                setContexts(contexts);
+              } catch (err) {
+                const detail = err instanceof Error ? err.message : String(err);
+                setError(detail);
+              }
+            }
+          }}
+        />
       </CardContent>
     </Card>
   );

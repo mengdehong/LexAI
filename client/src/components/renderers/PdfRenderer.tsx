@@ -15,11 +15,7 @@ export function PdfRenderer({ sourceBytes }: PdfRendererProps) {
       try {
         const bytes = sourceBytes;
         const pdfjs: any = await import("pdfjs-dist");
-        const workerUrl = (await import("pdfjs-dist/build/pdf.worker.mjs?url")).default as string;
-        if (pdfjs && pdfjs.GlobalWorkerOptions) {
-          pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-        }
-        const loadingTask = pdfjs.getDocument({ data: bytes });
+        const loadingTask = pdfjs.getDocument({ data: bytes, disableWorker: true });
         const doc = await loadingTask.promise;
         if (cancelled) return;
         setPages(doc.numPages);
@@ -29,8 +25,8 @@ export function PdfRenderer({ sourceBytes }: PdfRendererProps) {
         if (!canvas) return;
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
         await pg.render({ canvasContext: ctx, viewport }).promise;
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e));
