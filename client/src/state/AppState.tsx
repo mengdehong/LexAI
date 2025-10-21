@@ -8,6 +8,7 @@ export type UploadedDocument = {
   text: string;
   mimeType?: string;
   sourcePath?: string;
+  originalBytes?: Uint8Array;
 };
 
 export type TermDefinition = {
@@ -31,7 +32,7 @@ type AppStateValue = {
   terms: TermDefinition[];
   contexts: string[];
   globalTerms: GlobalTerm[];
-  setDocument: (payload: { id: string; text: string; name: string; mimeType?: string; sourcePath?: string }) => void;
+  setDocument: (payload: { id: string; text: string; name: string; mimeType?: string; sourcePath?: string; originalBytes?: Uint8Array }) => void;
   selectDocument: (id: string) => void;
   removeDocument: (id: string) => void;
   setTerms: (terms: TermDefinition[]) => void;
@@ -101,7 +102,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
   );
 
   const setDocument = useCallback(
-    ({ id, text, name, mimeType, sourcePath }: { id: string; text: string; name: string; mimeType?: string; sourcePath?: string }) => {
+    ({ id, text, name, mimeType, sourcePath, originalBytes }: { id: string; text: string; name: string; mimeType?: string; sourcePath?: string; originalBytes?: Uint8Array }) => {
       const next: UploadedDocument = {
         id,
         name,
@@ -109,6 +110,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
         uploadedAt: Date.now(),
         mimeType,
         sourcePath,
+        originalBytes,
       };
 
       activateDocument(next);

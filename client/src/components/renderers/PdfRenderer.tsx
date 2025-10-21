@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 
-type PdfRendererProps = {
-  sourcePath: string;
-};
+type PdfRendererProps = { sourceBytes: Uint8Array };
 
-export function PdfRenderer({ sourcePath }: PdfRendererProps) {
+export function PdfRenderer({ sourceBytes }: PdfRendererProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
@@ -15,15 +13,7 @@ export function PdfRenderer({ sourcePath }: PdfRendererProps) {
     let cancelled = false;
     (async () => {
       try {
-        let bytes: Uint8Array | null = null;
-        if (/^https?:/i.test(sourcePath)) {
-          const res = await fetch(sourcePath);
-          const buf = await res.arrayBuffer();
-          bytes = new Uint8Array(buf);
-        }
-        if (!bytes) {
-          throw new Error("Local PDF preview requires FS bridge; unsupported in this build.");
-        }
+        const bytes = sourceBytes;
         const pdfjs: any = await import("pdfjs-dist");
         const loadingTask = pdfjs.getDocument({ data: bytes, disableWorker: true });
         const doc = await loadingTask.promise;
@@ -45,7 +35,7 @@ export function PdfRenderer({ sourcePath }: PdfRendererProps) {
     return () => {
       cancelled = true;
     };
-  }, [sourcePath, page, scale]);
+  }, [sourceBytes, page, scale]);
 
   return (
     <div style={{ height: 560, display: "flex", flexDirection: "column" }}>

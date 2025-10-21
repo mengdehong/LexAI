@@ -90,7 +90,8 @@ export function DocumentPanel() {
         }
 
         const mime = file.type || (file.name.endsWith(".md") ? "text/markdown" : undefined);
-        setDocument({ id: payload.document_id, text: resolvedText, name: file.name, mimeType: mime, sourcePath: tempPath });
+        const originalBytes = new Uint8Array(arrayBuffer);
+        setDocument({ id: payload.document_id, text: resolvedText, name: file.name, mimeType: mime, sourcePath: tempPath, originalBytes });
         setUploadStatus("success");
         setMessage(
           payload.message ?? (isChinese ? "上传完成" : "Upload completed"),

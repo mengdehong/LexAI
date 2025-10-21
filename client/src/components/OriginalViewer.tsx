@@ -29,9 +29,9 @@ export function OriginalViewer() {
           <div style={{ height: 560, overflow: "auto" }}>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{documentText}</ReactMarkdown>
           </div>
-        ) : mode === "pdf" && doc.sourcePath ? (
+        ) : mode === "pdf" && doc.originalBytes ? (
           <div style={{ height: 560, overflow: "hidden" }}>
-            <PdfRenderer sourcePath={doc.sourcePath} />
+            <PdfRenderer sourceBytes={doc.originalBytes} />
           </div>
         ) : (
           <pre style={{ height: 560, overflow: "auto", whiteSpace: "pre-wrap" }}>{documentText}</pre>

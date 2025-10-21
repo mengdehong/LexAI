@@ -5,7 +5,7 @@ import { useLocale } from "@/state/LocaleContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export function ExtractedViewer() {
-  const { documentId, documentText, globalTerms, setTerms, setContexts, setSelectedTerm } = useAppState();
+  const { documentId, documentText, terms, setTerms, setContexts, setSelectedTerm } = useAppState();
   const language = useLocale();
   const isChinese = language === "zh-CN";
   const [extracting, setExtracting] = useState(false);
@@ -42,7 +42,7 @@ export function ExtractedViewer() {
     }
     let working = documentText;
     const replacements = new Map<string, { term: string; tooltip: string }>();
-    const sortedTerms = [...globalTerms].sort((a, b) => b.term.length - a.term.length);
+    const sortedTerms = [...terms].sort((a, b) => b.term.length - a.term.length);
     for (const entry of sortedTerms) {
       const baseTerm = entry.term.trim();
       if (baseTerm.length < 2) continue;
@@ -51,7 +51,7 @@ export function ExtractedViewer() {
       const token = `__TERM_${replacements.size}__`;
       if (!regex.test(working)) continue;
       const tooltipParts = [entry.definition];
-      if (entry.definition_cn) tooltipParts.push(entry.definition_cn);
+      if ((entry as any).definition_cn) tooltipParts.push((entry as any).definition_cn as string);
       const tooltip = tooltipParts.filter(Boolean).join(" • ");
       replacements.set(token, { term: entry.term, tooltip });
       working = working.replace(regex, token);
@@ -62,7 +62,7 @@ export function ExtractedViewer() {
       working = working.split(token).join(span);
     });
     return working.replace(/\n/g, "<br />");
-  }, [documentText, globalTerms, isChinese]);
+  }, [documentText, terms, isChinese]);
 
   useEffect(() => {
     // keep scroll top when content changes visually
