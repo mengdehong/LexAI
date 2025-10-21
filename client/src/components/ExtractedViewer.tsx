@@ -80,7 +80,7 @@ export function ExtractedViewer() {
       <CardContent>
         {error && <p className="panel__status error">{error}</p>}
         {infoMessage && !error && <p className="panel__status success">{infoMessage}</p>}
-        <div className="reading-panel__text" ref={scrollRef} dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
+        <div className="reading-panel__text" style={{ height: 560, overflow: 'auto' }} ref={scrollRef} dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
       </CardContent>
     </Card>
   );

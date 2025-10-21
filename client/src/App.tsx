@@ -4,8 +4,7 @@ import debounce from "lodash.debounce";
 import { DocumentPanel } from "./components/DocumentPanel";
 import { OriginalViewer } from "./components/OriginalViewer";
 import { ExtractedViewer } from "./components/ExtractedViewer";
-import { TermsPanel } from "./components/TermsPanel";
-import { ContextPanel } from "./components/ContextPanel";
+// removed TermsPanel and ContextPanel from workspace main split view
 import { GlobalTermbaseView } from "./components/GlobalTermbaseView";
 import { SettingsView } from "./components/SettingsView";
 import { OnboardingView } from "./components/OnboardingView";
@@ -29,12 +28,10 @@ function Workspace() {
     <div className="workspace">
       <div className="workspace__column">
         <DocumentPanel />
-        <OriginalViewer />
+        <ExtractedViewer />
       </div>
       <div className="workspace__column">
-        <ExtractedViewer />
-        <TermsPanel />
-        <ContextPanel />
+        <OriginalViewer />
       </div>
     </div>
   );
