@@ -1,9 +1,10 @@
 use std::{
+    collections::HashMap,
     error::Error,
     fs,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
 };
@@ -25,7 +26,7 @@ use sqlx::{
     ConnectOptions, Row, SqlitePool,
 };
 use tauri::async_runtime::spawn_blocking;
-use tauri::{Manager, State, WindowEvent};
+use tauri::{Emitter, Manager, State, WindowEvent};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 use tauri_plugin_store::StoreExt;
 use tauri_plugin_stronghold::stronghold::Stronghold;
@@ -233,6 +234,111 @@ impl StrongholdInner {
 struct SecretsManager {
     inner: Arc<AsyncMutex<StrongholdInner>>,
 }
+
+#[derive(Debug, Serialize, Clone)]
+pub struct BatchProgress {
+    total: usize,
+    completed: usize,
+    failed: usize,
+    cancelled: bool,
+    per_file: HashMap<String, String>,
+}
+
+const EVT_BATCH_PROGRESS: &str = "batch://progress";
+
+#[tauri::command]
+async fn start_batch_upload(
+    files: Vec<BatchFileSpec>,
+    app: tauri::AppHandle,
+    rpc_manager: State<'_, RpcManager>,
+    batch_state: State<'_, BatchState>,
+) -> Result<bool, String> {
+    let client = rpc_manager.ensure_client(&app).await?;
+    batch_state.cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+    let total = files.len();
+    let per_file: Arc<AsyncMutex<HashMap<String, String>>> = Arc::new(AsyncMutex::new(HashMap::new()));
+
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn({
+        let per_file = per_file.clone();
+        let cancel = batch_state.cancel.clone();
+        async move {
+            let mut completed = 0usize;
+            let mut failed = 0usize;
+            for spec in files {
+                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                    let snapshot = {
+                        let pf = per_file.lock().await;
+                        BatchProgress {
+                            total,
+                            completed,
+                            failed,
+                            cancelled: true,
+                            per_file: pf.clone(),
+                        }
+                    };
+                    let _ = app_handle.emit(EVT_BATCH_PROGRESS, snapshot);
+                    break;
+                }
+                let name = spec.file_name.clone();
+                let result = client
+                    .call(
+                        "upload_document",
+                        json!({"file_path": spec.file_path, "file_name": spec.file_name}),
+                    )
+                    .await;
+                {
+                    let mut pf = per_file.lock().await;
+                    match result {
+                        Ok(_) => {
+                            pf.insert(name, "ok".into());
+                            completed += 1;
+                        }
+                        Err(e) => {
+                            pf.insert(name, format!("error: {}", e));
+                            failed += 1;
+                        }
+                    }
+                }
+                // emit progress after each file
+                let snapshot = {
+                    let pf = per_file.lock().await;
+                    BatchProgress {
+                        total,
+                        completed,
+                        failed,
+                        cancelled: false,
+                        per_file: pf.clone(),
+                    }
+                };
+                let _ = app_handle.emit(EVT_BATCH_PROGRESS, snapshot);
+            }
+            // final snapshot if finished naturally
+            let snapshot = {
+                let pf = per_file.lock().await;
+                BatchProgress {
+                    total,
+                    completed,
+                    failed,
+                    cancelled: cancel.load(std::sync::atomic::Ordering::Relaxed),
+                    per_file: pf.clone(),
+                }
+            };
+            let _ = app_handle.emit(EVT_BATCH_PROGRESS, snapshot);
+        }
+    });
+
+    Ok(true)
+}
+
+#[tauri::command]
+async fn cancel_batch(batch_state: State<'_, BatchState>) -> Result<bool, String> {
+    batch_state
+        .cancel
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    Ok(true)
+}
+
 
 #[derive(Debug, Deserialize)]
 struct BatchFileSpec {
@@ -1146,6 +1252,9 @@ pub fn run() {
             .build(),
         )
         .setup(|app| {
+            start_batch_upload,
+            cancel_batch,
+
             let data_dir = app
                 .path()
                 .app_data_dir()
