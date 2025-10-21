@@ -136,7 +136,7 @@ export function TermsPanel() {
   );
 
   return (
-    <section className="panel">
+    <section className="panel" id="terms-panel">
       <header className="panel__header">
         <h2>{isChinese ? "提取的术语" : "Extracted Terms"}</h2>
       </header>
@@ -174,7 +174,7 @@ export function TermsPanel() {
               </button>
               <button
                 type="button"
-                className="save-button"
+                className="save-button pill-light"
                 onClick={() =>
                   duplicateActive && duplicateCandidate
                     ? updateTerm(duplicateCandidate.id, entry)

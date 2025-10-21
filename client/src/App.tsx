@@ -2,9 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import debounce from "lodash.debounce";
 import { DocumentPanel } from "./components/DocumentPanel";
-import { ReadingPanel } from "./components/ReadingPanel";
+import { ExtractedViewer } from "./components/ExtractedViewer";
 import { TermsPanel } from "./components/TermsPanel";
 import { ContextPanel } from "./components/ContextPanel";
+// removed TermsPanel and ContextPanel from workspace main split view
 import { GlobalTermbaseView } from "./components/GlobalTermbaseView";
 import { SettingsView } from "./components/SettingsView";
 import { OnboardingView } from "./components/OnboardingView";
@@ -15,6 +16,7 @@ import { useAppState } from "./state/AppState";
 import { loadSessionState, saveSessionState, type SessionState, type SessionView } from "./lib/sessionStore";
 import { LocaleProvider } from "./state/LocaleContext";
 import "./App.css";
+// legacy button kept for compatibility in other files if needed
 
 type ReviewTerm = {
   id: number;
@@ -22,25 +24,15 @@ type ReviewTerm = {
 
 const SAVE_DEBOUNCE_MS = 400;
 
-type WorkspaceProps = {
-  readingScrollPosition: number;
-  onReadingScrollChange: (position: number) => void;
-  documentText: string;
-};
-
-function Workspace({ readingScrollPosition, onReadingScrollChange, documentText }: WorkspaceProps) {
+function Workspace() {
   return (
     <div className="workspace">
       <div className="workspace__column">
         <DocumentPanel />
-        <TermsPanel />
+        <ExtractedViewer />
       </div>
       <div className="workspace__column">
-        <ReadingPanel
-          initialScrollPosition={readingScrollPosition}
-          onScrollPositionChange={onReadingScrollChange}
-          documentText={documentText}
-        />
+        <TermsPanel />
         <ContextPanel />
       </div>
     </div>
@@ -62,9 +54,9 @@ function App() {
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [generatorOpen, setGeneratorOpen] = useState(false);
   const [termbaseRefreshToken, setTermbaseRefreshToken] = useState(0);
-  const [reviewDueCount, setReviewDueCount] = useState(0);
+  const [, setReviewDueCount] = useState(0); // hidden in UI; keep setter for backend updates
   const previousView = useRef(activeView);
-  const { documentId, documents, documentText, terms, setTerms, hydrateDocuments } = useAppState();
+  const { documentId, documents, terms, setTerms, hydrateDocuments } = useAppState();
   const [readingScrollPosition, setReadingScrollPosition] = useState(0);
   const contentRef = useRef<HTMLElement | null>(null);
   const latestSessionRef = useRef<SessionState | null>(null);
@@ -287,77 +279,47 @@ function App() {
   }, []);
 
   const generatorLabel = definitionLanguage === "zh-CN" ? "AI 生成术语集" : "Generate with AI";
-  const reviewLabel = definitionLanguage === "zh-CN" ? "复习" : "Review";
-  const reviewButtonText = reviewDueCount > 0 ? `${reviewLabel} (${reviewDueCount})` : reviewLabel;
+  const reviewLabel = definitionLanguage === "zh-CN" ? "回顾" : "Review";
+  // 为保证中文在 SegmentedControl 中的视觉一致性，移除数量标记
+  const reviewButtonText = reviewLabel;
 
   return (
     <LocaleProvider language={definitionLanguage}>
-      <main className="app-shell">
-        <header className="topbar">
+      <div className="app-shell">
+        <header className="mac-header topbar">
           <div>
-            <h1>{definitionLanguage === "zh-CN" ? "LexAI 工作台" : "LexAI Workbench"}</h1>
-            <p className="topbar__status">
+            <h1 style={{ margin: 0, fontSize: 18 }}>{definitionLanguage === "zh-CN" ? "LexAI 工作台" : "LexAI Workbench"}</h1>
+            <div className="topbar__status" style={{ fontSize: 12 }}>
               {definitionLanguage === "zh-CN" ? "后端状态：" : "Backend status: "}
               {status}
-            </p>
-            {error && <p className="topbar__error">{error}</p>}
-            {configError && <p className="topbar__error">{configError}</p>}
+              {error && <span className="topbar__error"> — {error}</span>}
+              {configError && <span className="topbar__error"> — {configError}</span>}
+            </div>
           </div>
           <div className="topbar__actions">
-            <nav className="topbar__nav">
-              <button
-                type="button"
-                className={activeView === "workspace" ? "topbar__button active" : "topbar__button"}
-                onClick={() => setActiveView("workspace")}
-                disabled={showOnboarding || generatorOpen}
-              >
-                {definitionLanguage === "zh-CN" ? "工作区" : "Workspace"}
+            <nav className="topbar__nav" aria-label="Primary">
+              <button className={`topbar__button ${activeView === 'workspace' ? 'active' : ''}`} onClick={() => setActiveView('workspace')} disabled={showOnboarding || generatorOpen}>
+                {definitionLanguage === 'zh-CN' ? '工作区' : 'Workspace'}
               </button>
-              <button
-                type="button"
-                className={activeView === "global" ? "topbar__button active" : "topbar__button"}
-                onClick={() => setActiveView("global")}
-                disabled={showOnboarding || generatorOpen}
-              >
-                {definitionLanguage === "zh-CN" ? "全局术语库" : "Global Termbase"}
+              <button className={`topbar__button ${activeView === 'global' ? 'active' : ''}`} onClick={() => setActiveView('global')} disabled={showOnboarding || generatorOpen}>
+                {definitionLanguage === 'zh-CN' ? '全局库' : 'Global'}
               </button>
-              <button
-                type="button"
-                className={activeView === "review" ? "topbar__button active" : "topbar__button"}
-                onClick={() => setActiveView("review")}
-                disabled={showOnboarding || generatorOpen}
-              >
+              <button className={`topbar__button ${activeView === 'review' ? 'active' : ''}`} onClick={() => setActiveView('review')} disabled={showOnboarding || generatorOpen}>
                 {reviewButtonText}
               </button>
-              <button
-                type="button"
-                className={activeView === "settings" ? "topbar__button active" : "topbar__button"}
-                onClick={() => setActiveView("settings")}
-                disabled={(showOnboarding && activeView !== "settings") || generatorOpen}
-              >
-                {definitionLanguage === "zh-CN" ? "设置" : "Settings"}
+              <button className={`topbar__button ${activeView === 'settings' ? 'active' : ''}`} onClick={() => setActiveView('settings')} disabled={showOnboarding || generatorOpen}>
+                {definitionLanguage === 'zh-CN' ? '设置' : 'Settings'}
               </button>
             </nav>
-            <button
-              type="button"
-              className="topbar__cta"
-              onClick={() => {
-                setGeneratorOpen(true);
-              }}
-              disabled={showOnboarding || generatorOpen}
-            >
-            <button
-              type="button"
-              className="topbar__button"
-              onClick={() => setDiagnosticsOpen(true)}
-              disabled={generatorOpen}
-            >
+            <button className="topbar__button" onClick={() => setDiagnosticsOpen(true)} disabled={generatorOpen}>
               {definitionLanguage === "zh-CN" ? "诊断" : "Diagnostics"}
             </button>
+            <button className="topbar__cta" onClick={() => setGeneratorOpen(true)} disabled={showOnboarding || generatorOpen}>
               {generatorLabel}
             </button>
           </div>
         </header>
+        <main>
         <section className="app-shell__content" ref={contentRef} onScroll={handleContentScroll}>
           {showOnboarding ? (
             <OnboardingView
@@ -371,13 +333,7 @@ function App() {
             />
           ) : (
             <>
-              {activeView === "workspace" && (
-                <Workspace
-                  readingScrollPosition={readingScrollPosition}
-                  onReadingScrollChange={(position) => setReadingScrollPosition(position)}
-                  documentText={documentText}
-                />
-              )}
+              {activeView === "workspace" && <Workspace />}
               {activeView === "global" && (
                 <GlobalTermbaseView
                   refreshToken={termbaseRefreshToken}
@@ -393,17 +349,8 @@ function App() {
             </>
           )}
         </section>
-        <footer className="status-bar">
-          <span>
-            {documentId
-              ? definitionLanguage === "zh-CN"
-                ? `当前文档：${documentId}`
-                : `Active document: ${documentId}`
-              : definitionLanguage === "zh-CN"
-              ? "暂无选中文档"
-              : "No document selected"}
-          </span>
-        </footer>
+        </main>
+        {/* removed bottom status bar per request */}
         {generatorOpen && (
           <div className="onboarding-modal-layer">
             <OnboardingView
@@ -431,7 +378,7 @@ function App() {
             />
           </div>
         )}
-      </main>
+      </div>
     </LocaleProvider>
   );
 }

@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 @font-face {
   font-family: "LexAI Noto Sans SC";
   src: url("./assets/fonts/NotoSansSC-Regular.woff2") format("woff2");
@@ -7,7 +11,7 @@
 }
 
 :root {
-  font-family: "LexAI Noto Sans SC", "Noto Sans SC", "Inter", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", "Segoe UI", Helvetica, Arial, sans-serif;
+  font-family: "LXGW WenKai", "LXGW WenKai Screen", "LXGW WenKai GB", "霞鹜文楷", "LexAI Noto Sans SC", "Noto Sans SC", "Inter", "Source Han Sans SC", "PingFang SC", "Microsoft YaHei", "Segoe UI", Helvetica, Arial, sans-serif;
   font-size: 16px;
   line-height: 1.5;
   font-weight: 400;
@@ -27,13 +31,19 @@
   --text-muted: #475569;
   --danger: #b91c1c;
   --success: #166534;
+  /* macOS-like elevation & blur tokens */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.06), 0 0 1px rgba(0,0,0,.10);
+  --shadow-md: 0 8px 20px rgba(0,0,0,.12), 0 2px 6px rgba(0,0,0,.08);
+  --shadow-lg: 0 20px 40px rgba(0,0,0,.18), 0 8px 24px rgba(0,0,0,.14);
+  --blur-strong: 28px;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
   font-family: inherit;
-  background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+  /* subtle macOS-like gradient */
+  background: radial-gradient(1200px 800px at 20% -10%, #ffffff 0%, #f5f7fb 35%, #eef2ff 100%);
 }
 
 .app-shell {
@@ -50,6 +60,9 @@ body {
   background: rgba(15, 23, 42, 0.9);
   color: #f8fafc;
   box-shadow: 0 4px 16px rgba(15, 23, 42, 0.25);
+  position: sticky;
+  top: 0;
+  z-index: 40;
 }
 
 .topbar h1 {
@@ -78,6 +91,7 @@ body {
   display: flex;
   align-items: center;
   gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .topbar__cta {
@@ -156,8 +170,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
-  backdrop-filter: blur(6px);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(var(--blur-strong));
 }
 
 .panel__header {
@@ -206,7 +220,7 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding: 0.75rem;
+  padding: 0.5rem; /* compact height for doc items */
   border-radius: 12px;
   background: var(--surface-alt);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
@@ -245,6 +259,29 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+}
+
+/* Document list compact styles */
+.doc-item {
+  min-height: 44px; /* reduce block height */
+}
+.doc-item__meta strong {
+  display: block;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis; /* keep single line */
+  max-width: 48vw;
+}
+.doc-item__actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: nowrap; /* keep delete in one line */
+}
+.doc-item__actions .pill-button {
+  white-space: nowrap;
 }
 
 .doc-button time {
@@ -456,6 +493,28 @@ body {
   font-size: 0.85rem;
   transition: background 0.2s ease;
 }
+.pill-button:focus-visible,
+.save-button:focus-visible,
+.topbar__button:focus-visible,
+.upload-button:focus-visible {
+  outline: 2px solid #60a5fa;
+  outline-offset: 2px;
+}
+.pill-button.pill-light {
+  background: #E0F2FE; /* light sky */
+  color: #0C4A6E;      /* deep slate/teal text */
+}
+.pill-button.pill-light:hover {
+  background: #BAE6FD;
+}
+/* Make save-button pastel too when flagged */
+.save-button.pill-light {
+  background: #E0F2FE;
+  color: #0C4A6E;
+}
+.save-button.pill-light:hover {
+  background: #BAE6FD;
+}
 .pill-button.negative {
   background: #be123c;
 }
@@ -496,12 +555,18 @@ button:disabled {
 .term-table td {
   padding: 0.75rem;
   border-bottom: 1px solid #e2e8f0;
-  text-align: left;
 }
 
 .term-table th {
   background: #e0e7ff;
   font-weight: 600;
+  text-align: center; /* 第一行居中 */
+}
+
+/* 第一列（可见的“术语”列）居中：ID 列为第 1 列且隐藏，术语列为第 2 列 */
+.term-table td:nth-child(2),
+.term-table th:nth-child(2) {
+  text-align: center;
 }
 
 .term-table__input,
@@ -660,15 +725,14 @@ button:disabled {
   display: flex;
   gap: 0.5rem;
   align-items: center;
+  flex-wrap: nowrap; /* 操作按钮不换行 */
 }
 
-.termbase-row-actions button:nth-of-type(2) {
-  background: #ef4444;
+.termbase-row-actions button {
+  white-space: nowrap; /* 保证“联想/编辑/删除”不换行 */
 }
 
-.termbase-row-actions button:nth-of-type(2):hover {
-  background: #dc2626;
-}
+/* row actions styled via classes; no nth-of-type overrides */
 
 .termbase-row-actions .ghost-button {
   border: 1px solid var(--border);
@@ -760,6 +824,12 @@ button:disabled {
 .provider-entry__actions {
   display: flex;
   gap: 0.5rem;
+  align-items: center;
+  flex-wrap: nowrap; /* keep Edit/Test/Delete on a single line */
+}
+
+.provider-entry__actions button {
+  white-space: nowrap; /* prevent button text from wrapping */
 }
 
 .provider-entry__actions button,
@@ -783,13 +853,7 @@ button:disabled {
   background: var(--primary-strong);
 }
 
-.provider-entry__actions button:nth-of-type(2) {
-  background: #ef4444;
-}
-
-.provider-entry__actions button:nth-of-type(2):hover {
-  background: #dc2626;
-}
+/* provider entry actions use explicit classes; no positional color overrides */
 
 .provider-form__actions button:disabled,
 .provider-entry__actions button:disabled,
@@ -1309,8 +1373,9 @@ button:disabled {
   }
 
   .panel {
-    background: rgba(30, 41, 59, 0.9);
-    box-shadow: 0 20px 40px rgba(15, 23, 42, 0.75);
+    background: rgba(30, 41, 59, 0.86);
+    box-shadow: var(--shadow-lg);
+    backdrop-filter: blur(var(--blur-strong));
   }
 
   .panel__list-item {
@@ -1333,5 +1398,21 @@ button:disabled {
 
   .term-table td {
     border-color: rgba(148, 163, 184, 0.3);
+  }
+}
+
+/* macOS-like blurred header with subtle gradient */
+.mac-header {
+  backdrop-filter: blur(var(--blur-strong));
+  -webkit-backdrop-filter: blur(var(--blur-strong));
+  background: linear-gradient(180deg, rgba(255,255,255,0.78), rgba(255,255,255,0.62));
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+/* SegmentedControl labels removed with Mantine; kept header typography in buttons */
+
+@media (prefers-color-scheme: dark) {
+  .mac-header {
+    background: linear-gradient(180deg, rgba(15,23,42,0.72), rgba(15,23,42,0.58));
+    border-bottom: 1px solid rgba(255,255,255,0.06);
   }
 }
