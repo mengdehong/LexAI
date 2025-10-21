@@ -582,7 +582,7 @@ export function GlobalTermbaseView({ refreshToken = 0, onReviewCountChange }: Gl
                         ) : (
                           <>
                             <button type="button" className="pill-button pill-light" onClick={() => openExpansion(record)}>
-                              {isChinese ? "联想!" : "Deep dive"}
+                              {isChinese ? "联想" : "Associate"}
                             </button>
                             <button type="button" className="pill-button pill-light" onClick={() => beginEdit(record)}>
                             {isChinese ? "编辑" : "Edit"}
