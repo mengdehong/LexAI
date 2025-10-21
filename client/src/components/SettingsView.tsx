@@ -34,7 +34,7 @@ const MAPPING_LABELS: Record<MappingOperation, string> = {
   termExtraction: "Document Term Extraction",
   explanation: "AI Assisted Definitions",
   onboarding: "Conversational Onboarding",
-  deepDive: "Term Deep Dive",
+  deepDive: "Deep Dive",
 };
 
 const LANGUAGE_LABELS: Record<DefinitionLanguage, string> = {
@@ -557,7 +557,7 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
           <div className="provider-form__actions">
             <button
               type="button"
-              className="provider-form__test"
+              className="pill-button pill-light provider-form__test"
               onClick={async () => {
                 setError(null);
                 setInfo(null);
@@ -583,7 +583,7 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
             >
               {savingProvider ? (isChinese ? "测试中…" : "Testing…") : (isChinese ? "测试连接" : "Test Connection")}
             </button>
-            <button type="submit" disabled={savingProvider}>
+            <button type="submit" className="pill-button pill-light" disabled={savingProvider}>
               {savingProvider
                 ? isChinese
                   ? "正在保存…"
@@ -600,7 +600,7 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
               <button
                 type="button"
                 onClick={resetProviderForm}
-                className="provider-form__reset"
+                className="provider-form__reset pill-button pill-light"
                 disabled={savingProvider}
               >
                 {isChinese ? "取消编辑" : "Cancel Edit"}
@@ -630,11 +630,12 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
                     </span>
                   </div>
                 <div className="provider-entry__actions">
-                  <button type="button" onClick={() => handleEditProvider(provider)}>
+                  <button type="button" className="pill-button pill-light" onClick={() => handleEditProvider(provider)}>
                     {isChinese ? "编辑" : "Edit"}
                   </button>
                   <button
                     type="button"
+                    className="pill-button pill-light"
                     onClick={async () => {
                       setError(null);
                       setInfo(null);
@@ -654,7 +655,7 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
                   >
                     {testingProviderId === provider.id ? (isChinese ? "测试中…" : "Testing…") : (isChinese ? "测试" : "Test")}
                   </button>
-                  <button type="button" onClick={() => handleDeleteProvider(provider.id)}>
+                  <button type="button" className="pill-button negative" onClick={() => handleDeleteProvider(provider.id)}>
                     {isChinese ? "删除" : "Delete"}
                   </button>
                 </div>
@@ -680,7 +681,7 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
                           termExtraction: "文档术语提取",
                           explanation: "AI 释义助手",
                           onboarding: "对话式引导",
-                          deepDive: "术语联想",
+                          deepDive: "联想",
                         }[operation]
                       : MAPPING_LABELS[operation]}
                   </strong>

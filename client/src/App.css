@@ -806,13 +806,7 @@ button:disabled {
   background: var(--primary-strong);
 }
 
-.provider-entry__actions button:nth-of-type(2) {
-  background: #ef4444;
-}
-
-.provider-entry__actions button:nth-of-type(2):hover {
-  background: #dc2626;
-}
+/* provider entry actions use explicit classes; no positional color overrides */
 
 .provider-form__actions button:disabled,
 .provider-entry__actions button:disabled,
