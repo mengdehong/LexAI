@@ -86,7 +86,7 @@ export function ExtractedViewer() {
             {isChinese ? `已提取术语：${terms.length} 个` : `Extracted terms: ${terms.length}`}
             <button
               type="button"
-              className="pill-button"
+              className="pill-button pill-light"
               style={{ marginLeft: 8 }}
               onClick={() => {
                 const el = document.getElementById('terms-panel');
@@ -97,7 +97,7 @@ export function ExtractedViewer() {
             </button>
             <button
               type="button"
-              className="pill-button"
+              className="pill-button pill-light"
               style={{ marginLeft: 8 }}
               onClick={async () => {
                 if (!(window as any).__TAURI_INTERNALS__) {

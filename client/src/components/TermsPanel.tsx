@@ -174,7 +174,7 @@ export function TermsPanel() {
               </button>
               <button
                 type="button"
-                className="save-button"
+                className="save-button pill-light"
                 onClick={() =>
                   duplicateActive && duplicateCandidate
                     ? updateTerm(duplicateCandidate.id, entry)
