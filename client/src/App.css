@@ -470,6 +470,13 @@ body {
   font-size: 0.85rem;
   transition: background 0.2s ease;
 }
+.pill-button.pill-light {
+  background: #E0F2FE; /* light sky */
+  color: #0C4A6E;      /* deep slate/teal text */
+}
+.pill-button.pill-light:hover {
+  background: #BAE6FD;
+}
 .pill-button.negative {
   background: #be123c;
 }

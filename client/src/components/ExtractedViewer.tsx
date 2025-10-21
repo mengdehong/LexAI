@@ -74,7 +74,7 @@ export function ExtractedViewer() {
     <Card>
       <CardHeader>
         <CardTitle>{isChinese ? "提取视图" : "Extracted View"}</CardTitle>
-        <button type="button" className="pill-button" onClick={handleExtract} disabled={extracting || isDisabled} aria-busy={extracting}>
+        <button type="button" className="pill-button pill-light" onClick={handleExtract} disabled={extracting || isDisabled} aria-busy={extracting}>
           {extracting ? (isChinese ? "正在提取…" : "Extracting…") : isChinese ? "提取术语" : "Extract Terms"}
         </button>
       </CardHeader>
