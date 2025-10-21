@@ -1,9 +1,10 @@
 use std::{
+    collections::HashMap,
     error::Error,
     fs,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
 };
@@ -25,24 +26,33 @@ use sqlx::{
     ConnectOptions, Row, SqlitePool,
 };
 use tauri::async_runtime::spawn_blocking;
-use tauri::{Manager, State, WindowEvent};
+use tauri::{Emitter, Manager, State, WindowEvent};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 use tauri_plugin_store::StoreExt;
 use tauri_plugin_stronghold::stronghold::Stronghold;
 use tokio::{
     fs as tokio_fs,
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    process::{Child, ChildStdin, ChildStdout},
+    process::{Child, ChildStdin, ChildStdout, ChildStderr},
     sync::{oneshot, Mutex as AsyncMutex},
     time::{timeout, Duration},
 };
 
 use iota_stronghold::{Client as StrongholdClient, ClientError};
 
+#[derive(Serialize)]
+struct RpcDiagnostics {
+    running: bool,
+    exit_status: Option<i32>,
+    stderr_tail: Option<String>,
+}
+
 struct RpcClient {
     child: Arc<AsyncMutex<Child>>,
     stdin: Arc<AsyncMutex<ChildStdin>>,
     stdout: Arc<AsyncMutex<BufReader<ChildStdout>>>,
+    stderr: Option<Arc<AsyncMutex<BufReader<ChildStderr>>>>,
+    stderr_buf: Arc<AsyncMutex<Vec<String>>>,
     next_id: AtomicU64,
     response_timeout: Duration,
 }
@@ -57,14 +67,46 @@ impl RpcClient {
             .stdout
             .take()
             .ok_or_else(|| "Child process stdout unavailable".to_string())?;
+        let stderr = child.stderr.take();
 
-        Ok(Self {
+        let client = Self {
             child: Arc::new(AsyncMutex::new(child)),
             stdin: Arc::new(AsyncMutex::new(stdin)),
             stdout: Arc::new(AsyncMutex::new(BufReader::new(stdout))),
+            stderr: stderr.map(|s| Arc::new(AsyncMutex::new(BufReader::new(s)))),
+            stderr_buf: Arc::new(AsyncMutex::new(Vec::with_capacity(64))),
             next_id: AtomicU64::new(1),
             response_timeout,
-        })
+        };
+
+        if let Some(stderr_reader) = &client.stderr {
+            let stderr_reader = stderr_reader.clone();
+            let buf = client.stderr_buf.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    let read = {
+                        let mut s = stderr_reader.lock().await;
+                        s.read_line(&mut line).await
+                    };
+                    match read {
+                        Ok(0) => break,
+                        Ok(_) => {
+                            let mut b = buf.lock().await;
+                            b.push(line.trim_end_matches(['\r', '\n']).to_string());
+                            if b.len() > 100 {
+                                let overflow = b.len() - 100;
+                                b.drain(0..overflow);
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+        }
+
+        Ok(client)
     }
 
     async fn call(&self, method: &str, params: JsonValue) -> Result<JsonValue, String> {
@@ -132,6 +174,25 @@ impl RpcClient {
     }
 }
 
+impl RpcClient {
+    async fn diagnostics(&self) -> RpcDiagnostics {
+        let mut running = true;
+        let mut exit_status = None;
+        if let Ok(mut child) = self.child.try_lock() {
+            if let Ok(Some(status)) = child.try_wait() {
+                running = false;
+                exit_status = status.code();
+            }
+        }
+        let stderr_tail = {
+            let buf = self.stderr_buf.lock().await;
+            if buf.is_empty() { None } else { Some(buf.join("\n")) }
+        };
+        RpcDiagnostics { running, exit_status, stderr_tail }
+    }
+}
+
+
 struct AppState {
     pool: SqlitePool,
 }
@@ -148,6 +209,7 @@ struct StrongholdInner {
 impl StrongholdInner {
     fn ensure_client(&self) -> Result<StrongholdClient, String> {
         match self.stronghold.inner().get_client(&self.client_path) {
+
             Ok(client) => Ok(client),
             Err(ClientError::ClientDataNotPresent) => {
                 match self.stronghold.inner().load_client(&self.client_path) {
@@ -173,7 +235,124 @@ struct SecretsManager {
     inner: Arc<AsyncMutex<StrongholdInner>>,
 }
 
+#[derive(Debug, Serialize, Clone)]
+pub struct BatchProgress {
+    total: usize,
+    completed: usize,
+    failed: usize,
+    cancelled: bool,
+    per_file: HashMap<String, String>,
+}
+
+const EVT_BATCH_PROGRESS: &str = "batch://progress";
+
+#[tauri::command]
+async fn start_batch_upload(
+    files: Vec<BatchFileSpec>,
+    app: tauri::AppHandle,
+    rpc_manager: State<'_, RpcManager>,
+    batch_state: State<'_, BatchState>,
+) -> Result<bool, String> {
+    let client = rpc_manager.ensure_client(&app).await?;
+    batch_state.cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+    let total = files.len();
+    let per_file: Arc<AsyncMutex<HashMap<String, String>>> = Arc::new(AsyncMutex::new(HashMap::new()));
+
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn({
+        let per_file = per_file.clone();
+        let cancel = batch_state.cancel.clone();
+        async move {
+            let mut completed = 0usize;
+            let mut failed = 0usize;
+            for spec in files {
+                if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                    let snapshot = {
+                        let pf = per_file.lock().await;
+                        BatchProgress {
+                            total,
+                            completed,
+                            failed,
+                            cancelled: true,
+                            per_file: pf.clone(),
+                        }
+                    };
+                    let _ = app_handle.emit(EVT_BATCH_PROGRESS, snapshot);
+                    break;
+                }
+                let name = spec.file_name.clone();
+                let result = client
+                    .call(
+                        "upload_document",
+                        json!({"file_path": spec.file_path, "file_name": spec.file_name}),
+                    )
+                    .await;
+                {
+                    let mut pf = per_file.lock().await;
+                    match result {
+                        Ok(_) => {
+                            pf.insert(name, "ok".into());
+                            completed += 1;
+                        }
+                        Err(e) => {
+                            pf.insert(name, format!("error: {}", e));
+                            failed += 1;
+                        }
+                    }
+                }
+                // emit progress after each file
+                let snapshot = {
+                    let pf = per_file.lock().await;
+                    BatchProgress {
+                        total,
+                        completed,
+                        failed,
+                        cancelled: false,
+                        per_file: pf.clone(),
+                    }
+                };
+                let _ = app_handle.emit(EVT_BATCH_PROGRESS, snapshot);
+            }
+            // final snapshot if finished naturally
+            let snapshot = {
+                let pf = per_file.lock().await;
+                BatchProgress {
+                    total,
+                    completed,
+                    failed,
+                    cancelled: cancel.load(std::sync::atomic::Ordering::Relaxed),
+                    per_file: pf.clone(),
+                }
+            };
+            let _ = app_handle.emit(EVT_BATCH_PROGRESS, snapshot);
+        }
+    });
+
+    Ok(true)
+}
+
+#[tauri::command]
+async fn cancel_batch(batch_state: State<'_, BatchState>) -> Result<bool, String> {
+    batch_state
+        .cancel
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    Ok(true)
+}
+
+
+#[derive(Debug, Deserialize)]
+struct BatchFileSpec {
+    file_path: String,
+    file_name: String,
+}
+
+#[derive(Clone, Default)]
+struct BatchState {
+    cancel: Arc<std::sync::atomic::AtomicBool>,
+}
+
 impl SecretsManager {
+
     fn new(inner: StrongholdInner) -> Self {
         Self {
             inner: Arc::new(AsyncMutex::new(inner)),
@@ -197,6 +376,8 @@ impl SecretsManager {
                 .insert(record_key.clone(), sanitized.as_bytes().to_vec(), None)
                 .map_err(|err| err.to_string())?;
         }
+
+
 
         guard.stronghold.save().map_err(|err| err.to_string())
     }
@@ -355,6 +536,8 @@ async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
                 "RPC resource internal directory missing at {}",
                 internal_dir.display()
             ));
+
+
         }
     }
 
@@ -370,6 +553,7 @@ async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
     command.kill_on_drop(true);
     command.stdin(std::process::Stdio::piped());
     command.stdout(std::process::Stdio::piped());
+    command.stderr(std::process::Stdio::piped());
     command.env("QDRANT__STORAGE", storage_dir.to_string_lossy().to_string());
 
     #[cfg(target_os = "linux")]
@@ -392,6 +576,8 @@ async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
         command.creation_flags(0x08000000);
     }
 
+
+
     let child = command
         .spawn()
         .map_err(|err| format!("Failed to spawn RPC worker: {err}"))?;
@@ -404,14 +590,66 @@ async fn fetch_backend_status(
     rpc_manager: State<'_, RpcManager>,
 ) -> Result<String, String> {
     let client = rpc_manager.ensure_client(&app).await?;
-    let response = client
-        .call("ping", json!({}))
-        .await?
-        .get("status")
-        .and_then(JsonValue::as_str)
-        .map(str::to_string)
-        .ok_or_else(|| "Invalid ping response".to_string())?;
-    Ok(response)
+    // Try health first; fall back to ping for older workers
+    match client.call("health", json!({})).await {
+        Ok(val) => {
+            let status = val
+                .get("status")
+                .and_then(JsonValue::as_str)
+                .map(str::to_string)
+                .ok_or_else(|| "Invalid health response".to_string())?;
+            Ok(status)
+        }
+        Err(_) => {
+            let pong = client
+                .call("ping", json!({}))
+                .await?
+                .get("status")
+                .and_then(JsonValue::as_str)
+                .map(str::to_string)
+                .ok_or_else(|| "Invalid ping response".to_string())?;
+            Ok(pong)
+        }
+    }
+}
+
+#[tauri::command]
+async fn fetch_backend_health(
+    app: tauri::AppHandle,
+    rpc_manager: State<'_, RpcManager>,
+) -> Result<JsonValue, String> {
+    let client = rpc_manager.ensure_client(&app).await?;
+    match client.call("health", json!({})).await {
+        Ok(val) => Ok(val),
+        Err(err) => {
+            if err.contains("-32601") || err.to_lowercase().contains("method not found") {
+                client.call("ping", json!({})).await
+            } else {
+                Err(err)
+            }
+        }
+    }
+}
+
+#[tauri::command]
+async fn fetch_backend_diagnostics(
+    rpc_manager: State<'_, RpcManager>,
+    app: tauri::AppHandle,
+) -> Result<RpcDiagnostics, String> {
+    let client = rpc_manager.ensure_client(&app).await?;
+    Ok(client.diagnostics().await)
+}
+
+#[tauri::command]
+async fn restart_backend(
+    app: tauri::AppHandle,
+    rpc_manager: State<'_, RpcManager>,
+) -> Result<bool, String> {
+    let handle = rpc_manager.client_handle();
+    RpcManager::shutdown_with(handle).await;
+    // spawn new one
+    let _ = rpc_manager.ensure_client(&app).await?;
+    Ok(true)
 }
 
 #[tauri::command]
@@ -452,7 +690,7 @@ async fn upload_document(
     rpc_manager: State<'_, RpcManager>,
 ) -> Result<UploadPayload, String> {
     let client = rpc_manager.ensure_client(&app).await?;
-    let response = client
+    let response = match client
         .call(
             "upload_document",
             json!({
@@ -460,10 +698,28 @@ async fn upload_document(
                 "file_name": file_name,
             }),
         )
-        .await?;
+        .await
+    {
+        Ok(val) => Ok(val),
+        Err(e) => {
+            if e.contains("Method not found") {
+                client
+                    .call(
+                        "upload",
+                        json!({
+                            "file_path": file_path,
+                            "file_name": file_name,
+                        }),
+                    )
+                    .await
+            } else {
+                Err(e)
+            }
+        }
+    }?;
 
-    let mut payload: UploadPayload =
-        serde_json::from_value(response).map_err(|err| format!("Invalid RPC response: {err}"))?;
+    let mut payload: UploadPayload = serde_json::from_value(response)
+        .map_err(|err| format!("Invalid RPC response: {err}"))?;
 
     if payload.document_id.trim().is_empty() {
         return Err("Upload failed: missing document_id".to_string());
@@ -987,7 +1243,6 @@ fn migrate_legacy_api_keys(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(
             tauri_plugin_stronghold::Builder::new(|password| {
@@ -1025,6 +1280,7 @@ pub fn run() {
                 .map_err(|err| -> Box<dyn Error> { Box::new(err) })?;
             app.manage(AppState { pool });
             app.manage(RpcManager::new());
+            app.manage(BatchState::default());
 
             if let Some(window) = app.get_webview_window("main") {
                 let manager_handle = app.state::<RpcManager>().client_handle();
@@ -1043,6 +1299,9 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             fetch_backend_status,
+            fetch_backend_health,
+            fetch_backend_diagnostics,
+            restart_backend,
             search_term_contexts,
             store_temp_document,
             upload_document,
@@ -1058,7 +1317,8 @@ pub fn run() {
             submit_review_result,
             save_api_key,
             get_api_key,
-            has_api_key
+            has_api_key,
+            fetch_backend_health
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

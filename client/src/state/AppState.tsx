@@ -31,6 +31,7 @@ type AppStateValue = {
   globalTerms: GlobalTerm[];
   setDocument: (payload: { id: string; text: string; name: string }) => void;
   selectDocument: (id: string) => void;
+  removeDocument: (id: string) => void;
   setTerms: (terms: TermDefinition[]) => void;
   setContexts: (contexts: string[]) => void;
   setSelectedTerm: (term: string | null) => void;
@@ -87,6 +88,16 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
     [reset, setContexts, setDocumentId, setDocumentText, setSelectedTerm, setTerms],
   );
 
+  const removeDocument = useCallback(
+    (id: string) => {
+      setDocuments((prev) => prev.filter((doc) => doc.id !== id));
+      if (documentId === id) {
+        reset();
+      }
+    },
+    [documentId, reset],
+  );
+
   const setDocument = useCallback(
     ({ id, text, name }: { id: string; text: string; name: string }) => {
       const next: UploadedDocument = {
@@ -140,6 +151,7 @@ export function AppStateProvider({ children }: { children: React.ReactNode }) {
       globalTerms,
       setDocument,
       selectDocument,
+      removeDocument,
       setTerms,
       setContexts,
       setSelectedTerm,

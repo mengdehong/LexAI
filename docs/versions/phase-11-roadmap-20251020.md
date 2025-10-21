@@ -9,6 +9,8 @@
 - 可观测性：
   - 为启动失败添加结构化日志，并捕获 stdout/stderr (开发工具中的诊断窗口)。
   - 为 RPC Worker 增加轻量级健康检查端点，Tauri 后端可轮询此端点并将状态暴露给前端。
+  - 已完成最小补强：后端提供 `health` 端点，前端新增“诊断”面板展示健康信息；Tauri 后端暴露 `fetch_backend_health` 命令。预埋 stderr 尾日志采集以便后续扩展（默认不展示，避免泄露敏感信息）。
+
 
 ### 2) 密钥 & 提供商 (P11-B)
 - Stronghold UX：明确的“测试”按钮；按提供商保存/清除；迁移摘要。
@@ -20,6 +22,13 @@
 ### 3) 文档处理 & 搜索 (P11-C)
 - 多文件上传和按文件的状态显示。
 - 具有进度和取消功能的后台作业 (利用 Rust/Tauri 后台线程)。
+
+- 已完成阶段性进展（方案A，前端优先）：
+  - 多文件上传：在 DocumentPanel 支持串行批量上传，显示总体进度百分比。
+  - 取消批量：提供“取消批量”按钮，可中断仍未处理文件。
+  - 文件状态明细：上传过程中按文件展示 queued/ok/error，便于定位失败文件。
+  - 兼容性优化：Tauri 后端在旧 RPC Worker 下，`health` 自动回退 `ping`，`upload_document` 自动回退 `upload`，避免“无反馈”。
+  - 文本类文档支持：后端新增对 `.md/.markdown/.txt` 的轻量提取（UTF-8 读取），无需 rust_core。
 
 ### 4) 学习循环 (P11-D)
 - 复习热力图和难度评分。
@@ -44,3 +53,10 @@
 
 ## 跟踪
 每个主题将作为一个史诗 (epic) 在 GitHub Projects 中通过 issue 进行跟踪。里程碑映射到 `phase-11.x` 标签。
+
+### 11) 实施结果小结（本次迭代）
+- P11-B：完成“测试连接”UX、错误提示映射、Provider 预设与环境变量映射文档；Stronghold 迁移与读取。
+- P11-C：完成批量上传后台化（start_batch_upload/cancel_batch），进度事件 batch://progress，前端订阅并展示实时进度与 per-file 状态；.md/.txt 轻量提取；方法名兼容回退。
+- P11-A：新增 fetch_backend_diagnostics/restart_backend；诊断面板新增重启与健康信息；stderr 缓冲接入。
+- P11-E：初步收紧 Capabilities（移除 opener 权限）。
+- P11-F：修正 CI 步骤与新增最小冒烟测试（health）。

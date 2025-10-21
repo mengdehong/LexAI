@@ -82,6 +82,78 @@ async function resolveApiKey(provider: ProviderConfig): Promise<string> {
   return "";
 }
 
+
+function mapHttpErrorToHint(status: number, body: string, vendor: ProviderConfig["vendor"], baseUrl: string): string {
+  const generic = body || `HTTP ${status}`;
+  if (status === 401 || status === 403) {
+    return vendor === "gemini"
+      ? `Authentication failed (HTTP ${status}). Check your Gemini API key and project quotas.`
+      : `Authentication failed (HTTP ${status}). Check your API key and account permissions.`;
+  }
+  if (status === 404) {
+    return `Endpoint not found (HTTP 404). Verify base URL: ${baseUrl}/models`;
+  }
+  if (status >= 500) {
+    return `Provider service error (HTTP ${status}). Try again later or switch region.`;
+  }
+  return generic;
+}
+
+export async function testProvider(provider: ProviderConfig, keyOverride?: string): Promise<void> {
+  // Never print or return the API key.
+  const vendor = provider.vendor;
+  const baseUrl = normalizeBaseUrl(
+    provider.baseUrl,
+    vendor === "gemini" ? "https://generativelanguage.googleapis.com/v1beta" : "https://api.openai.com/v1",
+  );
+
+  let apiKey = (keyOverride ?? "").trim();
+  if (!apiKey) {
+    apiKey = await resolveApiKey(provider);
+  }
+  if (!apiKey) {
+    const hint = `Missing API key for provider "${provider.name}" (id: ${provider.id}). Open Settings and set the key, or define VITE_${provider.id
+      .replace(/[^a-z0-9]/gi, "_")
+      .toUpperCase()}_API_KEY.`;
+    throw new Error(hint);
+  }
+
+  if (vendor === "gemini") {
+    try {
+      const resp = await fetch(`${baseUrl}/models?key=${encodeURIComponent(apiKey)}`);
+      if (!resp.ok) {
+        const detail = await resp.text();
+        const hint = mapHttpErrorToHint(resp.status, detail, vendor, baseUrl);
+        throw new Error(hint);
+      }
+      return;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(
+        `Network error while connecting to Gemini. Check your internet connection and base URL (${baseUrl}). Details: ${msg}`,
+      );
+    }
+  }
+
+  // Default to OpenAI-compatible
+  try {
+    const resp = await fetch(`${baseUrl}/models`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!resp.ok) {
+      const detail = await resp.text();
+      const hint = mapHttpErrorToHint(resp.status, detail, provider.vendor, baseUrl);
+      throw new Error(hint);
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(
+      `Network error while connecting to provider. Verify base URL (${baseUrl}) and connectivity. Details: ${msg}`,
+    );
+  }
+}
+
 async function callOpenAI(
   provider: ProviderConfig,
   model: string,

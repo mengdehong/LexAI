@@ -68,6 +68,7 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
   const [savingLanguage, setSavingLanguage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [testingProviderId, setTestingProviderId] = useState<string | null>(null);
   const [modelDrafts, setModelDrafts] = useState<Record<MappingOperation, string>>({
     termExtraction: "",
     explanation: "",
@@ -554,6 +555,34 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
             </div>
           )}
           <div className="provider-form__actions">
+            <button
+              type="button"
+              className="provider-form__test"
+              onClick={async () => {
+                setError(null);
+                setInfo(null);
+                try {
+                  const active = providerForm.id
+                    ? providers.find((p) => p.id === providerForm.id)
+                    : { id: "__temp__", name: providerForm.name || "(temp)", vendor: providerForm.vendor, defaultModel: providerForm.defaultModel || "", baseUrl: providerForm.baseUrl || undefined };
+                  if (!active || !active.name || !active.defaultModel) {
+                    throw new Error(isChinese ? "请先填写名称与默认模型。" : "Please fill name and default model first.");
+                  }
+                  const { testProvider } = await import("../lib/llmClient");
+                  setSavingProvider(true);
+                  await testProvider(active, providerForm.apiKey.trim() || undefined);
+                  setInfo(isChinese ? "连接正常。" : "Connection verified.");
+                } catch (err) {
+                  const detail = err instanceof Error ? err.message : String(err);
+                  setError(detail);
+                } finally {
+                  setSavingProvider(false);
+                }
+              }}
+              disabled={savingProvider}
+            >
+              {savingProvider ? (isChinese ? "测试中…" : "Testing…") : (isChinese ? "测试连接" : "Test Connection")}
+            </button>
             <button type="submit" disabled={savingProvider}>
               {savingProvider
                 ? isChinese
@@ -603,6 +632,27 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
                 <div className="provider-entry__actions">
                   <button type="button" onClick={() => handleEditProvider(provider)}>
                     {isChinese ? "编辑" : "Edit"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setError(null);
+                      setInfo(null);
+                      setTestingProviderId(provider.id);
+                      try {
+                        const { testProvider } = await import("../lib/llmClient");
+                        await testProvider(provider);
+                        setInfo(isChinese ? "连接正常。" : "Connection verified.");
+                      } catch (err) {
+                        const detail = err instanceof Error ? err.message : String(err);
+                        setError(detail);
+                      } finally {
+                        setTestingProviderId(null);
+                      }
+                    }}
+                    disabled={testingProviderId === provider.id}
+                  >
+                    {testingProviderId === provider.id ? (isChinese ? "测试中…" : "Testing…") : (isChinese ? "测试" : "Test")}
                   </button>
                   <button type="button" onClick={() => handleDeleteProvider(provider.id)}>
                     {isChinese ? "删除" : "Delete"}

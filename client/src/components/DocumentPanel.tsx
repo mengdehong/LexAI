@@ -1,16 +1,51 @@
 import { invoke } from "@tauri-apps/api/tauri";
-import { ChangeEvent, useCallback, useState } from "react";
+import { listen, UnlistenFn } from "@tauri-apps/api/event";
+import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useAppState } from "../state/AppState";
 import { useLocale } from "../state/LocaleContext";
 
 type UploadStatus = "idle" | "uploading" | "success" | "error";
 
 export function DocumentPanel() {
-  const { documentId, documents, setDocument, selectDocument } = useAppState();
+  const { documentId, documents, setDocument, selectDocument, removeDocument } = useAppState();
   const language = useLocale();
   const isChinese = language === "zh-CN";
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>("idle");
   const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
+  const [fileStatuses, setFileStatuses] = useState<Record<string, "queued"|"ok"|"error">>({});
+  const cancelRef = useRef<boolean>(false);
+  useEffect(() => {
+    let unlisten: UnlistenFn | null = null;
+    (async () => {
+      try {
+        unlisten = await listen<{
+          total: number;
+          completed: number;
+          failed: number;
+          cancelled: boolean;
+          per_file: Record<string, string>;
+        }>("batch://progress", (event) => {
+          const p = event.payload;
+          const done = p.completed + p.failed;
+          setProgress(Math.round((done / Math.max(1, p.total)) * 100));
+          setFileStatuses(p.per_file as Record<string, "queued" | "ok" | "error" | string>);
+          setBusy(!p.cancelled && done < p.total);
+        });
+      } catch {
+        /* noop */
+      }
+    })();
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, []);
+
+
+  useEffect(() => () => { cancelRef.current = true; }, []);
 
   const handleSelection = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
@@ -78,6 +113,31 @@ export function DocumentPanel() {
     [isChinese, setDocument],
   );
 
+  const handleMultiple = useCallback(async (files: FileList) => {
+    setBusy(true);
+    setMessage(null);
+    cancelRef.current = false;
+
+    const specs: { file_path: string; file_name: string }[] = [];
+    const initial: Record<string, "queued" | "ok" | "error"> = {};
+
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i]!;
+      initial[f.name] = "queued";
+      const buf = await f.arrayBuffer();
+      const tempPath = await invoke<string>("store_temp_document", {
+        fileName: f.name,
+        contents: Array.from(new Uint8Array(buf)),
+      });
+      specs.push({ file_path: tempPath, file_name: f.name });
+    }
+
+    setFileStatuses(initial);
+    setProgress(0);
+
+    await invoke("start_batch_upload", { files: specs });
+  }, []);
+
   const handleSelectDocument = useCallback(
     (id: string) => {
       setMessage(null);
@@ -96,11 +156,62 @@ export function DocumentPanel() {
           }
         >
           <span>{isChinese ? "选择文件" : "Select file"}</span>
-          <input type="file" onChange={handleSelection} disabled={uploadStatus === "uploading"} />
+          <input
+            type="file"
+            multiple
+            onChange={async (e) => {
+              const list = e.target.files;
+              if (!list || list.length === 0) return;
+              if (list.length === 1) {
+                await handleSelection(e as unknown as ChangeEvent<HTMLInputElement>);
+              } else {
+                setMessage(null);
+                await handleMultiple(list);
+              }
+              e.currentTarget.value = "";
+            }}
+            disabled={uploadStatus === "uploading" || busy}
+          />
         </label>
       </header>
       {uploadStatus === "uploading" && (
         <p className="panel__status">{isChinese ? "正在上传…" : "Uploading…"}</p>
+      )}
+      {busy && (
+        <>
+          <p className="panel__status">{isChinese ? `正在批量上传… ${progress ?? 0}%` : `Batch uploading… ${progress ?? 0}%`}</p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              type="button"
+              disabled={!busy}
+              onClick={async () => {
+                cancelRef.current = true;
+                try {
+                  await invoke("cancel_batch");
+                } catch {
+                  /* noop */
+                }
+              }}
+            >
+              {isChinese ? "取消批量" : "Cancel batch"}
+            </button>
+          </div>
+
+          <ul className="panel__list">
+            <li>
+              <strong>{isChinese ? "批量明细" : "Batch details"}</strong>
+              <div className="panel__list-subtitle">
+                {Object.keys(fileStatuses).length === 0 ? (isChinese ? "准备中…" : "Preparing…") : (
+                  <ul>
+                    {Object.entries(fileStatuses).map(([name, st]) => (
+                      <li key={name}>{name} — {st}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </li>
+          </ul>
+        </>
       )}
       {uploadStatus === "success" && message && <p className="panel__status success">{message}</p>}
       {uploadStatus === "error" && message && <p className="panel__status error">{message}</p>}
@@ -114,19 +225,26 @@ export function DocumentPanel() {
         )}
         {documents.map((doc) => (
           <li key={doc.id} className={doc.id === documentId ? "panel__list-item active" : "panel__list-item"}>
-            <button
-              type="button"
-              className="doc-button"
-              onClick={() => handleSelectDocument(doc.id)}
-            >
-              <div className="doc-button__meta">
-                <strong>{doc.name}</strong>
-                <span className="panel__list-subtitle">{doc.id}</span>
+            <div className="doc-button__row" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                type="button"
+                className="doc-button"
+                onClick={() => handleSelectDocument(doc.id)}
+              >
+                <div className="doc-button__meta">
+                  <strong>{doc.name}</strong>
+                  <span className="panel__list-subtitle">{doc.id}</span>
+                </div>
+                <time dateTime={new Date(doc.uploadedAt).toISOString()}>
+                  {new Date(doc.uploadedAt).toLocaleTimeString()}
+                </time>
+              </button>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                <button type="button" onClick={() => removeDocument(doc.id)}>
+                  {isChinese ? "删除" : "Delete"}
+                </button>
               </div>
-              <time dateTime={new Date(doc.uploadedAt).toISOString()}>
-                {new Date(doc.uploadedAt).toLocaleTimeString()}
-              </time>
-            </button>
+            </div>
           </li>
         ))}
       </ul>

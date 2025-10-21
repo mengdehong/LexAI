@@ -47,6 +47,15 @@ async def rpc_ping(_: Dict[str, Any]) -> Dict[str, Any]:
     return {"status": "ok"}
 
 
+async def rpc_health(_: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "status": "ok",
+        "embedding_model": settings.embedding_model_name,
+        "qdrant_host": settings.qdrant_host,
+        "collection": COLLECTION_NAME,
+    }
+
+
 async def rpc_upload_document(params: Dict[str, Any]) -> Dict[str, Any]:
     file_path = params.get("file_path")
     if not file_path:
@@ -118,6 +127,7 @@ async def rpc_search_term_contexts(params: Dict[str, Any]) -> Dict[str, Any]:
 
 RPC_METHODS: Dict[str, Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]] = {
     "ping": rpc_ping,
+    "health": rpc_health,
     "upload_document": rpc_upload_document,
     "search_term_contexts": rpc_search_term_contexts,
 }

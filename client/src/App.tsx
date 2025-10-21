@@ -9,6 +9,7 @@ import { GlobalTermbaseView } from "./components/GlobalTermbaseView";
 import { SettingsView } from "./components/SettingsView";
 import { OnboardingView } from "./components/OnboardingView";
 import { ReviewCenter } from "./components/ReviewCenter";
+import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { loadConfig, type DefinitionLanguage } from "./lib/configStore";
 import { useAppState } from "./state/AppState";
 import { loadSessionState, saveSessionState, type SessionState, type SessionView } from "./lib/sessionStore";
@@ -58,6 +59,7 @@ function App() {
   const [hasOnboardingMapping, setHasOnboardingMapping] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
   const [enforceOnboarding, setEnforceOnboarding] = useState(true);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [generatorOpen, setGeneratorOpen] = useState(false);
   const [termbaseRefreshToken, setTermbaseRefreshToken] = useState(0);
   const [reviewDueCount, setReviewDueCount] = useState(0);
@@ -344,6 +346,14 @@ function App() {
               }}
               disabled={showOnboarding || generatorOpen}
             >
+            <button
+              type="button"
+              className="topbar__button"
+              onClick={() => setDiagnosticsOpen(true)}
+              disabled={generatorOpen}
+            >
+              {definitionLanguage === "zh-CN" ? "诊断" : "Diagnostics"}
+            </button>
               {generatorLabel}
             </button>
           </div>
@@ -404,6 +414,11 @@ function App() {
                 setActiveView("settings");
               }}
               onComplete={(options) => {
+        {diagnosticsOpen && (
+          <div className="onboarding-modal-layer">
+            <DiagnosticsPanel onClose={() => setDiagnosticsOpen(false)} />
+          </div>
+        )}
                 setGeneratorOpen(false);
                 if (options?.nextView) {
                   setActiveView(options.nextView);
