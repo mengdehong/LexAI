@@ -16,7 +16,8 @@ import { useAppState } from "./state/AppState";
 import { loadSessionState, saveSessionState, type SessionState, type SessionView } from "./lib/sessionStore";
 import { LocaleProvider } from "./state/LocaleContext";
 import "./App.css";
-import { Button } from "@/components/ui/button";
+// legacy button kept for compatibility in other files if needed
+import { AppShell, Group, SegmentedControl, Button } from "@mantine/core";
 
 type ReviewTerm = {
   id: number;
@@ -284,75 +285,40 @@ function App() {
 
   return (
     <LocaleProvider language={definitionLanguage}>
-      <main className="app-shell">
-        <header className="topbar">
-          <div>
-            <h1>{definitionLanguage === "zh-CN" ? "LexAI 工作台" : "LexAI Workbench"}</h1>
-            <p className="topbar__status">
-              {definitionLanguage === "zh-CN" ? "后端状态：" : "Backend status: "}
-              {status}
-            </p>
-            {error && <p className="topbar__error">{error}</p>}
-            {configError && <p className="topbar__error">{configError}</p>}
-          </div>
-          <div className="topbar__actions">
-            <nav className="topbar__nav">
-              <Button
-                type="button"
-                variant={activeView === "workspace" ? "active" : "default"}
-                onClick={() => setActiveView("workspace")}
+      <AppShell header={{ height: 64 }} padding="md">
+        <AppShell.Header>
+          <Group justify="space-between" px="md" h="100%">
+            <div>
+              <h1 style={{ margin: 0, fontSize: 18 }}>{definitionLanguage === "zh-CN" ? "LexAI 工作台" : "LexAI Workbench"}</h1>
+              <div className="topbar__status" style={{ fontSize: 12 }}>
+                {definitionLanguage === "zh-CN" ? "后端状态：" : "Backend status: "}
+                {status}
+                {error && <span className="topbar__error"> — {error}</span>}
+                {configError && <span className="topbar__error"> — {configError}</span>}
+              </div>
+            </div>
+            <Group gap="xs">
+              <SegmentedControl
+                value={activeView}
+                onChange={(v: any) => setActiveView(v)}
+                data={[
+                  { label: definitionLanguage === 'zh-CN' ? '工作区' : 'Workspace', value: 'workspace' },
+                  { label: definitionLanguage === 'zh-CN' ? '全局库' : 'Global', value: 'global' },
+                  { label: reviewButtonText, value: 'review' },
+                  { label: definitionLanguage === 'zh-CN' ? '设置' : 'Settings', value: 'settings' },
+                ]}
                 disabled={showOnboarding || generatorOpen}
-              >
-                {definitionLanguage === "zh-CN" ? "工作区" : "Workspace"}
-              </Button>
-              <Button
-                type="button"
-                variant={activeView === "global" ? "active" : "default"}
-                onClick={() => setActiveView("global")}
-                disabled={showOnboarding || generatorOpen}
-              >
-                {definitionLanguage === "zh-CN" ? "全局术语库" : "Global Termbase"}
-              </Button>
-              <Button
-                type="button"
-                variant={activeView === "review" ? "active" : "default"}
-                onClick={() => setActiveView("review")}
-                disabled={showOnboarding || generatorOpen}
-              >
-                {reviewButtonText}
-              </Button>
-              <Button
-                type="button"
-                variant={activeView === "settings" ? "active" : "default"}
-                onClick={() => setActiveView("settings")}
-                disabled={(showOnboarding && activeView !== "settings") || generatorOpen}
-              >
-                {definitionLanguage === "zh-CN" ? "设置" : "Settings"}
-              </Button>
-            </nav>
-            <div className="topbar__actions">
-              <Button
-                type="button"
-                onClick={() => setDiagnosticsOpen(true)}
-                disabled={generatorOpen}
-                aria-label="Open diagnostics"
-              >
+              />
+              <Button variant="default" onClick={() => setDiagnosticsOpen(true)} disabled={generatorOpen}>
                 {definitionLanguage === "zh-CN" ? "诊断" : "Diagnostics"}
               </Button>
-              <button
-                type="button"
-                className="topbar__cta"
-                onClick={() => {
-                  setGeneratorOpen(true);
-                }}
-                disabled={showOnboarding || generatorOpen}
-                aria-label="Generate with AI"
-              >
+              <Button onClick={() => setGeneratorOpen(true)} disabled={showOnboarding || generatorOpen}>
                 {generatorLabel}
-              </button>
-            </div>
-          </div>
-        </header>
+              </Button>
+            </Group>
+          </Group>
+        </AppShell.Header>
+        <AppShell.Main>
         <section className="app-shell__content" ref={contentRef} onScroll={handleContentScroll}>
           {showOnboarding ? (
             <OnboardingView
@@ -382,6 +348,7 @@ function App() {
             </>
           )}
         </section>
+        </AppShell.Main>
         <footer className="status-bar">
           <span>
             {documentId
@@ -420,7 +387,7 @@ function App() {
             />
           </div>
         )}
-      </main>
+      </AppShell>
     </LocaleProvider>
   );
 }
