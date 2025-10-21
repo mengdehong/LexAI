@@ -824,6 +824,12 @@ button:disabled {
 .provider-entry__actions {
   display: flex;
   gap: 0.5rem;
+  align-items: center;
+  flex-wrap: nowrap; /* keep Edit/Test/Delete on a single line */
+}
+
+.provider-entry__actions button {
+  white-space: nowrap; /* prevent button text from wrapping */
 }
 
 .provider-entry__actions button,
