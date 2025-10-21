@@ -477,6 +477,14 @@ body {
 .pill-button.pill-light:hover {
   background: #BAE6FD;
 }
+/* Make save-button pastel too when flagged */
+.save-button.pill-light {
+  background: #E0F2FE;
+  color: #0C4A6E;
+}
+.save-button.pill-light:hover {
+  background: #BAE6FD;
+}
 .pill-button.negative {
   background: #be123c;
 }
@@ -683,13 +691,7 @@ button:disabled {
   align-items: center;
 }
 
-.termbase-row-actions button:nth-of-type(2) {
-  background: #ef4444;
-}
-
-.termbase-row-actions button:nth-of-type(2):hover {
-  background: #dc2626;
-}
+/* row actions styled via classes; no nth-of-type overrides */
 
 .termbase-row-actions .ghost-button {
   border: 1px solid var(--border);
