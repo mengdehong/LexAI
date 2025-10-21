@@ -286,7 +286,7 @@ function App() {
 
   return (
     <LocaleProvider language={definitionLanguage}>
-      <AppShell header={{ height: 64 }} padding="md">
+      <AppShell header={{ height: 48 }} padding="md">
         <AppShell.Header className="mac-header">
           <Group justify="space-between" px="md" h="100%">
             <div>
