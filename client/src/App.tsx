@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import debounce from "lodash.debounce";
 import { DocumentPanel } from "./components/DocumentPanel";
-import { ReadingPanel } from "./components/ReadingPanel";
+import { OriginalViewer } from "./components/OriginalViewer";
+import { ExtractedViewer } from "./components/ExtractedViewer";
 import { TermsPanel } from "./components/TermsPanel";
 import { ContextPanel } from "./components/ContextPanel";
 import { GlobalTermbaseView } from "./components/GlobalTermbaseView";
@@ -23,25 +24,16 @@ type ReviewTerm = {
 
 const SAVE_DEBOUNCE_MS = 400;
 
-type WorkspaceProps = {
-  readingScrollPosition: number;
-  onReadingScrollChange: (position: number) => void;
-  documentText: string;
-};
-
-function Workspace({ readingScrollPosition, onReadingScrollChange, documentText }: WorkspaceProps) {
+function Workspace() {
   return (
     <div className="workspace">
       <div className="workspace__column">
         <DocumentPanel />
-        <TermsPanel />
+        <OriginalViewer />
       </div>
       <div className="workspace__column">
-        <ReadingPanel
-          initialScrollPosition={readingScrollPosition}
-          onScrollPositionChange={onReadingScrollChange}
-          documentText={documentText}
-        />
+        <ExtractedViewer />
+        <TermsPanel />
         <ContextPanel />
       </div>
     </div>
@@ -65,7 +57,7 @@ function App() {
   const [termbaseRefreshToken, setTermbaseRefreshToken] = useState(0);
   const [reviewDueCount, setReviewDueCount] = useState(0);
   const previousView = useRef(activeView);
-  const { documentId, documents, documentText, terms, setTerms, hydrateDocuments } = useAppState();
+  const { documentId, documents, terms, setTerms, hydrateDocuments } = useAppState();
   const [readingScrollPosition, setReadingScrollPosition] = useState(0);
   const contentRef = useRef<HTMLElement | null>(null);
   const latestSessionRef = useRef<SessionState | null>(null);
@@ -375,13 +367,7 @@ function App() {
             />
           ) : (
             <>
-              {activeView === "workspace" && (
-                <Workspace
-                  readingScrollPosition={readingScrollPosition}
-                  onReadingScrollChange={(position) => setReadingScrollPosition(position)}
-                  documentText={documentText}
-                />
-              )}
+              {activeView === "workspace" && <Workspace />}
               {activeView === "global" && (
                 <GlobalTermbaseView
                   refreshToken={termbaseRefreshToken}

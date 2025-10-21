@@ -89,7 +89,8 @@ export function DocumentPanel() {
             : "[Document text unavailable. Extraction returned empty result.]";
         }
 
-        setDocument({ id: payload.document_id, text: resolvedText, name: file.name });
+        const mime = file.type || (file.name.endsWith(".md") ? "text/markdown" : undefined);
+        setDocument({ id: payload.document_id, text: resolvedText, name: file.name, mimeType: mime, sourcePath: tempPath });
         setUploadStatus("success");
         setMessage(
           payload.message ?? (isChinese ? "上传完成" : "Upload completed"),
@@ -227,31 +228,6 @@ export function DocumentPanel() {
           </ul>
         ) : (
           <section aria-roledescription="carousel" className="relative">
-            <div className="flex items-center justify-between mb-2">
-              <div style={{ flex: 1 }} />
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  className="pill-button"
-                  onClick={() => {
-                    const scroller = document.getElementById("doc-carousel");
-                    if (scroller) scroller.scrollBy({ left: -Math.max(scroller.clientWidth * 0.9, 320), behavior: 'smooth' });
-                  }}
-                >
-                  {isChinese ? "向左" : "Prev"}
-                </button>
-                <button
-                  type="button"
-                  className="pill-button"
-                  onClick={() => {
-                    const scroller = document.getElementById("doc-carousel");
-                    if (scroller) scroller.scrollBy({ left: Math.max(scroller.clientWidth * 0.9, 320), behavior: 'smooth' });
-                  }}
-                >
-                  {isChinese ? "向右" : "Next"}
-                </button>
-              </div>
-            </div>
             <div
               id="doc-carousel"
               className="flex gap-3 overflow-x-auto scroll-smooth snap-x snap-mandatory px-1"
