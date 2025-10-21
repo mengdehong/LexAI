@@ -3,6 +3,7 @@ import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useAppState } from "../state/AppState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Carousel } from "@mantine/carousel";
 import { useLocale } from "../state/LocaleContext";
 
 type UploadStatus = "idle" | "uploading" | "success" | "error";
@@ -226,41 +227,44 @@ export function DocumentPanel() {
             </li>
           </ul>
         ) : (
-          <section aria-roledescription="carousel" className="relative">
-            <div
-              id="doc-carousel"
-              className="flex gap-3 overflow-x-auto scroll-smooth snap-x snap-mandatory px-1"
-              style={{ scrollbarWidth: 'thin' }}
-            >
-              {documents.map((doc) => (
-                <div key={doc.id} className="min-w-[300px] snap-start">
-                  <div className={doc.id === documentId ? "panel__list-item active" : "panel__list-item"}>
+          <Carousel
+            withControls={false}
+            withIndicators
+            slideSize={{ base: '100%', sm: '50%', md: '33.333%' }}
+            slideGap="md"
+            align="start"
+            styles={{ indicator: { background: '#93c5fd' } }}
+            aria-roledescription="carousel"
+         >
+            {documents.map((doc) => (
+              <Carousel.Slide key={doc.id}>
+                <div className={doc.id === documentId ? "panel__list-item active" : "panel__list-item"}>
+                  <button
+                    type="button"
+                    className="doc-button"
+                    onClick={() => handleSelectDocument(doc.id)}
+                    aria-label={isChinese ? `打开 ${doc.name}` : `Open ${doc.name}`}
+                  >
+                    <div className="doc-button__meta">
+                      <strong>{doc.name}</strong>
+                    </div>
+                  </button>
+                  <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
                     <button
                       type="button"
-                      className="doc-button"
-                      onClick={() => handleSelectDocument(doc.id)}
+                      onClick={() => {
+                        const ok = window.confirm(isChinese ? "确认删除该文档？" : "Delete this document?");
+                        if (ok) removeDocument(doc.id);
+                      }}
+                      className="pill-button negative"
                     >
-                      <div className="doc-button__meta">
-                        <strong>{doc.name}</strong>
-                      </div>
+                      {isChinese ? "删除" : "Delete"}
                     </button>
-                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const ok = window.confirm(isChinese ? "确认删除该文档？" : "Delete this document?");
-                          if (ok) removeDocument(doc.id);
-                        }}
-                        className="pill-button negative"
-                      >
-                        {isChinese ? "删除" : "Delete"}
-                      </button>
-                    </div>
                   </div>
                 </div>
-              ))}
-            </div>
-          </section>
+              </Carousel.Slide>
+            ))}
+          </Carousel>
         )}
       </CardContent>
     </Card>
