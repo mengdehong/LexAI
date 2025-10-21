@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import debounce from "lodash.debounce";
 import { DocumentPanel } from "./components/DocumentPanel";
-import { OriginalViewer } from "./components/OriginalViewer";
 import { ExtractedViewer } from "./components/ExtractedViewer";
 import { TermsPanel } from "./components/TermsPanel";
 import { ContextPanel } from "./components/ContextPanel";
@@ -30,10 +29,9 @@ function Workspace() {
     <div className="workspace">
       <div className="workspace__column">
         <DocumentPanel />
-        <OriginalViewer />
+        <ExtractedViewer />
       </div>
       <div className="workspace__column">
-        <ExtractedViewer />
         <TermsPanel />
         <ContextPanel />
       </div>

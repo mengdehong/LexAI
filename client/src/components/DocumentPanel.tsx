@@ -89,13 +89,7 @@ export function DocumentPanel() {
             : "[Document text unavailable. Extraction returned empty result.]";
         }
 
-        let mime = file.type || undefined;
-        if (!mime) {
-          if (file.name.toLowerCase().endsWith(".md")) mime = "text/markdown";
-          else if (file.name.toLowerCase().endsWith(".pdf")) mime = "application/pdf";
-        }
-        const originalBytes = new Uint8Array(arrayBuffer);
-        setDocument({ id: payload.document_id, text: resolvedText, name: file.name, mimeType: mime, sourcePath: tempPath, originalBytes });
+        setDocument({ id: payload.document_id, text: resolvedText, name: file.name });
         setUploadStatus("success");
         setMessage(
           payload.message ?? (isChinese ? "上传完成" : "Upload completed"),

@@ -6,7 +6,7 @@ import { useLocale } from "@/state/LocaleContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export function ExtractedViewer() {
-  const { documentId, documentText, terms, setTerms, setContexts, setSelectedTerm } = useAppState();
+  const { documentId, documentText, terms, setTerms, setContexts, setSelectedTerm, refreshGlobalTerms } = useAppState();
   const language = useLocale();
   const isChinese = language === "zh-CN";
   const [extracting, setExtracting] = useState(false);
@@ -84,6 +84,47 @@ export function ExtractedViewer() {
         {terms.length > 0 && (
           <div className="panel__list-subtitle" style={{ marginBottom: 8 }}>
             {isChinese ? `已提取术语：${terms.length} 个` : `Extracted terms: ${terms.length}`}
+            <button
+              type="button"
+              className="pill-button"
+              style={{ marginLeft: 8 }}
+              onClick={() => {
+                const el = document.getElementById('terms-panel');
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+            >
+              {isChinese ? "查看术语列表" : "Open terms list"}
+            </button>
+            <button
+              type="button"
+              className="pill-button"
+              style={{ marginLeft: 8 }}
+              onClick={async () => {
+                if (!(window as any).__TAURI_INTERNALS__) {
+                  setError(isChinese ? "请通过 Tauri 运行应用以保存到全局库。" : "Run via Tauri to save to global termbase.");
+                  return;
+                }
+                try {
+                  for (const t of terms) {
+                    const existing = await invoke<any | null>("find_term_by_name", { term: t.term.trim() });
+                    if (!existing) {
+                      await invoke("add_term", {
+                        term: t.term,
+                        definition: t.definition,
+                        definition_cn: (t as any).definition_cn ?? null,
+                      });
+                    }
+                  }
+                  await refreshGlobalTerms();
+                  setInfoMessage(isChinese ? "已保存全部术语到全局库（重复项自动跳过）。" : "Saved all terms to global termbase (duplicates skipped).");
+                } catch (err) {
+                  const detail = err instanceof Error ? err.message : String(err);
+                  setError(detail);
+                }
+              }}
+            >
+              {isChinese ? "全部保存" : "Save all"}
+            </button>
           </div>
         )}
         <div
