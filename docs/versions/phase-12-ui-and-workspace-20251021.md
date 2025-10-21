@@ -18,10 +18,11 @@
   - [x] 集成 Tailwind CSS（安装依赖、初始化、配置 content 源、在 App.css 注入 @tailwind 指令）。
   - [x] 初始化 shadcn/ui（使用轻量 Button/Card 兼容现有样式）。
   - [x] 首批组件：Button、Card；替换顶部导航按钮与 DocumentPanel 根容器；修复顶栏重叠并置顶（sticky）。
-  - [x] 文档列表由横向 scroll-snap 升级为 Mantine Carousel（默认 3–4 条、仅指标点、无左右控件）。
+  - [x] 文档列表采用原生 scroll-snap 走马灯（3–4 条可见、仅指标点、无左右控件）。
   - [x] Workspace 视图精简：以 ExtractedViewer + TermsPanel + ContextPanel 为主（按决策移除 Original/PDF 预览）。
-  - [x] 采用 Mantine 基础外观与 AppShell 顶栏，SegmentedControl 统一宽度；引入 macOS 风格的强磨砂（blur≈28px）、细腻渐变与明确阴影层级（shadow-sm/md/lg）。
+  - [x] 移除 Mantine，统一到 Tailwind + shadcn/ui，避免混合技术栈与全局样式冲突；顶部导航用 Tailwind 按钮组重建（sticky、等宽、状态高亮），保留 macOS 风格的强磨砂（blur≈28px）与阴影层级。
   - [x] 统一浅色系按钮（Workspace/Settings/Global）：提取术语/查看术语列表/全部保存/编辑/测试等均改为浅色；删除操作为显式负向样式。
+  - [x] 全局主题从紫色迁移为淡蓝/蓝色（primary=#0A84FF），同步按钮/表头/高亮/hover 与暗色模式色板。
   - [x] 顶部 Review 标签在中文改为“回顾”，移除计数；Review 页面移除“复习中心”标题，仅保留说明。
   - [x] Documents 列表仅展示文件名（隐藏文件哈希与上传时间）。
   - [x] 全局库表格：表头行居中；第一可见列（术语）居中；操作列“联想/编辑/删除”一行不换行；“术语联想”更名为“联想/Associate”。
@@ -34,7 +35,7 @@
   - UI 替换与样式无性能回退；Tauri 启动时间无显著变动。
 
 ## 3. 质量闸门状态
-- Build: PASS（client 构建通过）。
+- Build: PASS（client 构建通过；Tauri 本地打包通过，产出 deb/rpm 包）。
 - Lint/Typecheck: PASS。
 - Tests: PASS（现有 2 个测试文件，7 个用例通过）。
 - 本地验证命令：在 `client/` 运行 `npm run dev` 做手动冒烟；如有则运行根目录 `lint/typecheck/test` 与后端 `fmt/test`。
@@ -48,10 +49,10 @@
   - chore(UI): init Tailwind & shadcn/ui; add Button/Card and replace key views
   - feat(P12/ui): fix topbar overlap（分离 Diagnostics 与 Generate CTA，sticky 顶部）
   - feat(P12/ui): DocumentPanel 横向 scroll-snap 走马灯
-  - feat(ui/docs): replace scroll-snap list with Mantine Carousel; add focus-visible outlines
+  - refactor(ui): standardize on Tailwind + shadcn; remove Mantine (providers/AppShell/Segmented/Carousel)，重建顶部导航与文档列表
+  - feat(ui/docs): add focus-visible outlines；文档列表使用 scroll-snap
   - feat(P12/ui): Inc2 split-view 初版与回退（按决策移除 Original/PDF 预览，聚焦提取与术语流程）
-  - feat(P12/ui): adopt Mantine Provider/AppShell/Segmented，接入主题样式文件
-  - feat(ui/theme): 应用 macOS 风格的 blur(28px)/渐变/阴影 Token；Header 使用 .mac-header
+  - feat(ui/theme): 应用 macOS 风格的 blur(28px)/渐变/阴影 Token；Header 使用 .mac-header；主题色改为蓝色（#0A84FF）
   - feat(ui): 统一浅色系按钮（pill-light），删除为负向样式；隐藏 Documents 的哈希与时间
   - fix(ui/header): 中文 Review 标签从“复习”改为“回顾”并移除计数，提升可读性
   - fix(ui/termbase): 表格居中与操作列不换行；按钮文案“联想/Associate”与样式统一
