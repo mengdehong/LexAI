@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import { fileURLToPath, URL } from "node:url";
 import react from "@vitejs/plugin-react";
 
 // @ts-expect-error process is a nodejs global
@@ -9,6 +10,7 @@ export default defineConfig(async () => ({
   plugins: [react()],
   resolve: {
     alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
       "@tauri-apps/api/tauri": "@tauri-apps/api/core",
     },
   },

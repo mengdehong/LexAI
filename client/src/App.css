@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 @font-face {
   font-family: "LexAI Noto Sans SC";
   src: url("./assets/fonts/NotoSansSC-Regular.woff2") format("woff2");

@@ -15,6 +15,7 @@ import { useAppState } from "./state/AppState";
 import { loadSessionState, saveSessionState, type SessionState, type SessionView } from "./lib/sessionStore";
 import { LocaleProvider } from "./state/LocaleContext";
 import "./App.css";
+import { Button } from "@/components/ui/button";
 
 type ReviewTerm = {
   id: number;
@@ -305,38 +306,38 @@ function App() {
           </div>
           <div className="topbar__actions">
             <nav className="topbar__nav">
-              <button
+              <Button
                 type="button"
-                className={activeView === "workspace" ? "topbar__button active" : "topbar__button"}
+                variant={activeView === "workspace" ? "active" : "default"}
                 onClick={() => setActiveView("workspace")}
                 disabled={showOnboarding || generatorOpen}
               >
                 {definitionLanguage === "zh-CN" ? "工作区" : "Workspace"}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className={activeView === "global" ? "topbar__button active" : "topbar__button"}
+                variant={activeView === "global" ? "active" : "default"}
                 onClick={() => setActiveView("global")}
                 disabled={showOnboarding || generatorOpen}
               >
                 {definitionLanguage === "zh-CN" ? "全局术语库" : "Global Termbase"}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className={activeView === "review" ? "topbar__button active" : "topbar__button"}
+                variant={activeView === "review" ? "active" : "default"}
                 onClick={() => setActiveView("review")}
                 disabled={showOnboarding || generatorOpen}
               >
                 {reviewButtonText}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className={activeView === "settings" ? "topbar__button active" : "topbar__button"}
+                variant={activeView === "settings" ? "active" : "default"}
                 onClick={() => setActiveView("settings")}
                 disabled={(showOnboarding && activeView !== "settings") || generatorOpen}
               >
                 {definitionLanguage === "zh-CN" ? "设置" : "Settings"}
-              </button>
+              </Button>
             </nav>
             <button
               type="button"
@@ -346,14 +347,13 @@ function App() {
               }}
               disabled={showOnboarding || generatorOpen}
             >
-            <button
+            <Button
               type="button"
-              className="topbar__button"
               onClick={() => setDiagnosticsOpen(true)}
               disabled={generatorOpen}
             >
               {definitionLanguage === "zh-CN" ? "诊断" : "Diagnostics"}
-            </button>
+            </Button>
               {generatorLabel}
             </button>
           </div>

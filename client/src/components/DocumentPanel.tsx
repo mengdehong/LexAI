@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/tauri";
 import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useAppState } from "../state/AppState";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useLocale } from "../state/LocaleContext";
 
 type UploadStatus = "idle" | "uploading" | "success" | "error";
@@ -30,7 +31,7 @@ export function DocumentPanel() {
           const p = event.payload;
           const done = p.completed + p.failed;
           setProgress(Math.round((done / Math.max(1, p.total)) * 100));
-          setFileStatuses(p.per_file as Record<string, "queued" | "ok" | "error" | string>);
+          setFileStatuses(p.per_file as Record<string, "queued" | "ok" | "error">);
           setBusy(!p.cancelled && done < p.total);
         });
       } catch {
@@ -147,9 +148,9 @@ export function DocumentPanel() {
   );
 
   return (
-    <section className="panel">
-      <header className="panel__header">
-        <h2>{isChinese ? "文档" : "Documents"}</h2>
+    <Card>
+      <CardHeader>
+        <CardTitle>{isChinese ? "文档" : "Documents"}</CardTitle>
         <label
           className={
             uploadStatus === "uploading" ? "upload-button upload-button--disabled" : "upload-button"
@@ -173,81 +174,83 @@ export function DocumentPanel() {
             disabled={uploadStatus === "uploading" || busy}
           />
         </label>
-      </header>
-      {uploadStatus === "uploading" && (
-        <p className="panel__status">{isChinese ? "正在上传…" : "Uploading…"}</p>
-      )}
-      {busy && (
-        <>
-          <p className="panel__status">{isChinese ? `正在批量上传… ${progress ?? 0}%` : `Batch uploading… ${progress ?? 0}%`}</p>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              type="button"
-              disabled={!busy}
-              onClick={async () => {
-                cancelRef.current = true;
-                try {
-                  await invoke("cancel_batch");
-                } catch {
-                  /* noop */
-                }
-              }}
-            >
-              {isChinese ? "取消批量" : "Cancel batch"}
-            </button>
-          </div>
-
-          <ul className="panel__list">
-            <li>
-              <strong>{isChinese ? "批量明细" : "Batch details"}</strong>
-              <div className="panel__list-subtitle">
-                {Object.keys(fileStatuses).length === 0 ? (isChinese ? "准备中…" : "Preparing…") : (
-                  <ul>
-                    {Object.entries(fileStatuses).map(([name, st]) => (
-                      <li key={name}>{name} — {st}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </li>
-          </ul>
-        </>
-      )}
-      {uploadStatus === "success" && message && <p className="panel__status success">{message}</p>}
-      {uploadStatus === "error" && message && <p className="panel__status error">{message}</p>}
-      <ul className="panel__list">
-        {documents.length === 0 && (
-          <li>
-            {isChinese
-              ? "尚未上传任何文档。点击上方“选择文件”或使用顶部“AI 生成术语集”快速开始。"
-              : "No documents uploaded yet. Use Select file above or the top bar Generate with AI button to get started."}
-          </li>
+      </CardHeader>
+      <CardContent>
+        {uploadStatus === "uploading" && (
+          <p className="panel__status">{isChinese ? "正在上传…" : "Uploading…"}</p>
         )}
-        {documents.map((doc) => (
-          <li key={doc.id} className={doc.id === documentId ? "panel__list-item active" : "panel__list-item"}>
-            <div className="doc-button__row" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {busy && (
+          <>
+            <p className="panel__status">{isChinese ? `正在批量上传… ${progress ?? 0}%` : `Batch uploading… ${progress ?? 0}%`}</p>
+            <div style={{ display: "flex", gap: 8 }}>
               <button
                 type="button"
-                className="doc-button"
-                onClick={() => handleSelectDocument(doc.id)}
+                disabled={!busy}
+                onClick={async () => {
+                  cancelRef.current = true;
+                  try {
+                    await invoke("cancel_batch");
+                  } catch {
+                    /* noop */
+                  }
+                }}
               >
-                <div className="doc-button__meta">
-                  <strong>{doc.name}</strong>
-                  <span className="panel__list-subtitle">{doc.id}</span>
-                </div>
-                <time dateTime={new Date(doc.uploadedAt).toISOString()}>
-                  {new Date(doc.uploadedAt).toLocaleTimeString()}
-                </time>
+                {isChinese ? "取消批量" : "Cancel batch"}
               </button>
-              <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-                <button type="button" onClick={() => removeDocument(doc.id)}>
-                  {isChinese ? "删除" : "Delete"}
-                </button>
-              </div>
             </div>
-          </li>
-        ))}
-      </ul>
-    </section>
+
+            <ul className="panel__list">
+              <li>
+                <strong>{isChinese ? "批量明细" : "Batch details"}</strong>
+                <div className="panel__list-subtitle">
+                  {Object.keys(fileStatuses).length === 0 ? (isChinese ? "准备中…" : "Preparing…") : (
+                    <ul>
+                      {Object.entries(fileStatuses).map(([name, st]) => (
+                        <li key={name}>{name} — {st}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </li>
+            </ul>
+          </>
+        )}
+        {uploadStatus === "success" && message && <p className="panel__status success">{message}</p>}
+        {uploadStatus === "error" && message && <p className="panel__status error">{message}</p>}
+        <ul className="panel__list">
+          {documents.length === 0 && (
+            <li>
+              {isChinese
+                ? "尚未上传任何文档。点击上方“选择文件”或使用顶部“AI 生成术语集”快速开始。"
+                : "No documents uploaded yet. Use Select file above or the top bar Generate with AI button to get started."}
+            </li>
+          )}
+          {documents.map((doc) => (
+            <li key={doc.id} className={doc.id === documentId ? "panel__list-item active" : "panel__list-item"}>
+              <div className="doc-button__row" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  type="button"
+                  className="doc-button"
+                  onClick={() => handleSelectDocument(doc.id)}
+                >
+                  <div className="doc-button__meta">
+                    <strong>{doc.name}</strong>
+                    <span className="panel__list-subtitle">{doc.id}</span>
+                  </div>
+                  <time dateTime={new Date(doc.uploadedAt).toISOString()}>
+                    {new Date(doc.uploadedAt).toLocaleTimeString()}
+                  </time>
+                </button>
+                <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                  <button type="button" onClick={() => removeDocument(doc.id)}>
+                    {isChinese ? "删除" : "Delete"}
+                  </button>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </CardContent>
+    </Card>
   );
 }
