@@ -119,24 +119,38 @@ export async function testProvider(provider: ProviderConfig, keyOverride?: strin
   }
 
   if (vendor === "gemini") {
-    const resp = await fetch(`${baseUrl}/models?key=${encodeURIComponent(apiKey)}`);
-    if (!resp.ok) {
-      const detail = await resp.text();
-      const hint = mapHttpErrorToHint(resp.status, detail, vendor, baseUrl);
-      throw new Error(hint);
+    try {
+      const resp = await fetch(`${baseUrl}/models?key=${encodeURIComponent(apiKey)}`);
+      if (!resp.ok) {
+        const detail = await resp.text();
+        const hint = mapHttpErrorToHint(resp.status, detail, vendor, baseUrl);
+        throw new Error(hint);
+      }
+      return;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(
+        `Network error while connecting to Gemini. Check your internet connection and base URL (${baseUrl}). Details: ${msg}`,
+      );
     }
-    return;
   }
 
   // Default to OpenAI-compatible
-  const resp = await fetch(`${baseUrl}/models`, {
-    method: "GET",
-    headers: { Authorization: `Bearer ${apiKey}` },
-  });
-  if (!resp.ok) {
-    const detail = await resp.text();
-    const hint = mapHttpErrorToHint(resp.status, detail, provider.vendor, baseUrl);
-    throw new Error(hint);
+  try {
+    const resp = await fetch(`${baseUrl}/models`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    });
+    if (!resp.ok) {
+      const detail = await resp.text();
+      const hint = mapHttpErrorToHint(resp.status, detail, provider.vendor, baseUrl);
+      throw new Error(hint);
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(
+      `Network error while connecting to provider. Verify base URL (${baseUrl}) and connectivity. Details: ${msg}`,
+    );
   }
 }
 
