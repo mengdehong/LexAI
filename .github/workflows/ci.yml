@@ -62,10 +62,11 @@ jobs:
           components: rustfmt, clippy
 
       - name: Cargo fmt
+        run: cargo fmt --all -- --check
+        working-directory: client/src-tauri
+
       - name: Cargo test
         run: cargo test --all --release
-        working-directory: client/src-tauri
-        run: cargo fmt --all -- --check
         working-directory: client/src-tauri
 
       - name: Cargo clippy
