@@ -80,6 +80,11 @@ export function ExtractedViewer() {
       <CardContent>
         {error && <p className="panel__status error">{error}</p>}
         {infoMessage && !error && <p className="panel__status success">{infoMessage}</p>}
+        {terms.length > 0 && (
+          <div className="panel__list-subtitle" style={{ marginBottom: 8 }}>
+            {isChinese ? `已提取术语：${terms.length} 个` : `Extracted terms: ${terms.length}`}
+          </div>
+        )}
         <div className="reading-panel__text" style={{ height: 560, overflow: 'auto' }} ref={scrollRef} dangerouslySetInnerHTML={{ __html: highlightedHtml }} />
       </CardContent>
     </Card>

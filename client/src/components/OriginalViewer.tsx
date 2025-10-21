@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { useAppState } from "@/state/AppState";
+import { useLocale } from "@/state/LocaleContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PdfRenderer } from "./renderers/PdfRenderer";
 import ReactMarkdown from "react-markdown";
@@ -7,6 +8,8 @@ import remarkGfm from "remark-gfm";
 
 export function OriginalViewer() {
   const { documentId, documents, documentText } = useAppState();
+  const language = useLocale();
+  const isChinese = language === "zh-CN";
   const doc = useMemo(() => documents.find((d) => d.id === documentId) || null, [documents, documentId]);
 
   const mode: "markdown" | "pdf" | "text" | "none" = useMemo(() => {
@@ -29,9 +32,13 @@ export function OriginalViewer() {
           <div style={{ height: 560, overflow: "auto" }}>
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{documentText}</ReactMarkdown>
           </div>
-        ) : mode === "pdf" && doc.originalBytes ? (
+        ) : mode === "pdf" ? (
           <div style={{ height: 560, overflow: "hidden" }}>
-            <PdfRenderer sourceBytes={doc.originalBytes} />
+            {doc.originalBytes && doc.originalBytes.length > 0 ? (
+              <PdfRenderer sourceBytes={doc.originalBytes} />
+            ) : (
+              <p className="panel__status error">{isChinese ? "无法预览 PDF：缺少原始文件内容。请重新上传该 PDF。" : "Cannot preview PDF: original file content missing. Please re-upload the PDF."}</p>
+            )}
           </div>
         ) : (
           <pre style={{ height: 560, overflow: "auto", whiteSpace: "pre-wrap" }}>{documentText}</pre>
