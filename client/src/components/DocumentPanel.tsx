@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/tauri";
+import { listen, UnlistenFn } from "@tauri-apps/api/event";
 import { ChangeEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useAppState } from "../state/AppState";
 import { useLocale } from "../state/LocaleContext";
@@ -15,6 +16,34 @@ export function DocumentPanel() {
   const [progress, setProgress] = useState<number | null>(null);
   const [fileStatuses, setFileStatuses] = useState<Record<string, "queued"|"ok"|"error">>({});
   const cancelRef = useRef<boolean>(false);
+  useEffect(() => {
+    let unlisten: UnlistenFn | null = null;
+    (async () => {
+      try {
+        unlisten = await listen<{
+          total: number;
+          completed: number;
+          failed: number;
+          cancelled: boolean;
+          per_file: Record<string, string>;
+        }>("batch://progress", (event) => {
+          const p = event.payload;
+          const done = p.completed + p.failed;
+          setProgress(Math.round((done / Math.max(1, p.total)) * 100));
+          setFileStatuses(p.per_file as Record<string, "queued" | "ok" | "error" | string>);
+          setBusy(!p.cancelled && done < p.total);
+        });
+      } catch {
+        /* noop */
+      }
+    })();
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, []);
+
 
   useEffect(() => () => { cancelRef.current = true; }, []);
 
@@ -88,46 +117,26 @@ export function DocumentPanel() {
     setBusy(true);
     setMessage(null);
     cancelRef.current = false;
-    const total = files.length;
-    const initial: Record<string, "queued"|"ok"|"error"> = {};
-    for (let i = 0; i < total; i++) {
+
+    const specs: { file_path: string; file_name: string }[] = [];
+    const initial: Record<string, "queued" | "ok" | "error"> = {};
+
+    for (let i = 0; i < files.length; i++) {
       const f = files[i]!;
       initial[f.name] = "queued";
+      const buf = await f.arrayBuffer();
+      const tempPath = await invoke<string>("store_temp_document", {
+        fileName: f.name,
+        contents: Array.from(new Uint8Array(buf)),
+      });
+      specs.push({ file_path: tempPath, file_name: f.name });
     }
+
     setFileStatuses(initial);
     setProgress(0);
 
-    for (let i = 0; i < total; i++) {
-      if (cancelRef.current) break;
-      const f = files[i]!;
-      try {
-        const arrayBuffer = await f.arrayBuffer();
-        const tempPath = await invoke<string>("store_temp_document", {
-          fileName: f.name,
-          contents: Array.from(new Uint8Array(arrayBuffer)),
-        });
-        const payload = await invoke<{
-          document_id: string;
-          extracted_text?: string | null;
-          message?: string | null;
-          status: string;
-        }>("upload_document", { filePath: tempPath, fileName: f.name });
-        if (payload?.document_id) {
-          setFileStatuses((prev) => ({ ...prev, [f.name]: "ok" }));
-          if (i === total - 1) {
-            setDocument({ id: payload.document_id, text: payload.extracted_text ?? "", name: f.name });
-          }
-        } else {
-          setFileStatuses((prev) => ({ ...prev, [f.name]: "error" }));
-        }
-      } catch (err) {
-        setFileStatuses((prev) => ({ ...prev, [f.name]: "error" }));
-        console.error("Failed to upload", f.name, err);
-      }
-      setProgress(Math.round(((i + 1) / total) * 100));
-    }
-    setBusy(false);
-  }, [setDocument]);
+    await invoke("start_batch_upload", { files: specs });
+  }, []);
 
   const handleSelectDocument = useCallback(
     (id: string) => {
@@ -172,7 +181,18 @@ export function DocumentPanel() {
         <>
           <p className="panel__status">{isChinese ? `正在批量上传… ${progress ?? 0}%` : `Batch uploading… ${progress ?? 0}%`}</p>
           <div style={{ display: "flex", gap: 8 }}>
-            <button type="button" disabled={!busy} onClick={() => { cancelRef.current = true; }}>
+            <button
+              type="button"
+              disabled={!busy}
+              onClick={async () => {
+                cancelRef.current = true;
+                try {
+                  await invoke("cancel_batch");
+                } catch {
+                  /* noop */
+                }
+              }}
+            >
               {isChinese ? "取消批量" : "Cancel batch"}
             </button>
           </div>
