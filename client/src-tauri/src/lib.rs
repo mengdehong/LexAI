@@ -26,7 +26,7 @@ use sqlx::{
     ConnectOptions, Row, SqlitePool,
 };
 use tauri::async_runtime::spawn_blocking;
-use tauri::{Manager, State, WindowEvent};
+use tauri::{Emitter, Manager, State, WindowEvent};
 use tauri_plugin_dialog::{DialogExt, FilePath};
 use tauri_plugin_store::StoreExt;
 use tauri_plugin_stronghold::stronghold::Stronghold;
@@ -244,6 +244,8 @@ pub struct BatchProgress {
     per_file: HashMap<String, String>,
 }
 
+const EVT_BATCH_PROGRESS: &str = "batch://progress";
+
 #[tauri::command]
 async fn start_batch_upload(
     files: Vec<BatchFileSpec>,
@@ -256,6 +258,7 @@ async fn start_batch_upload(
     let total = files.len();
     let per_file: Arc<AsyncMutex<HashMap<String, String>>> = Arc::new(AsyncMutex::new(HashMap::new()));
 
+    let app_handle = app.clone();
     tauri::async_runtime::spawn({
         let per_file = per_file.clone();
         let cancel = batch_state.cancel.clone();
@@ -264,6 +267,17 @@ async fn start_batch_upload(
             let mut failed = 0usize;
             for spec in files {
                 if cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                    let snapshot = {
+                        let pf = per_file.lock().await;
+                        BatchProgress {
+                            total,
+                            completed,
+                            failed,
+                            cancelled: true,
+                            per_file: pf.clone(),
+                        }
+                    };
+                    let _ = app_handle.emit(EVT_BATCH_PROGRESS, snapshot);
                     break;
                 }
                 let name = spec.file_name.clone();
@@ -273,18 +287,44 @@ async fn start_batch_upload(
                         json!({"file_path": spec.file_path, "file_name": spec.file_name}),
                     )
                     .await;
-                let mut pf = per_file.lock().await;
-                match result {
-                    Ok(_) => {
-                        pf.insert(name, "ok".into());
-                        completed += 1;
-                    }
-                    Err(e) => {
-                        pf.insert(name, format!("error: {}", e));
-                        failed += 1;
+                {
+                    let mut pf = per_file.lock().await;
+                    match result {
+                        Ok(_) => {
+                            pf.insert(name, "ok".into());
+                            completed += 1;
+                        }
+                        Err(e) => {
+                            pf.insert(name, format!("error: {}", e));
+                            failed += 1;
+                        }
                     }
                 }
+                // emit progress after each file
+                let snapshot = {
+                    let pf = per_file.lock().await;
+                    BatchProgress {
+                        total,
+                        completed,
+                        failed,
+                        cancelled: false,
+                        per_file: pf.clone(),
+                    }
+                };
+                let _ = app_handle.emit(EVT_BATCH_PROGRESS, snapshot);
             }
+            // final snapshot if finished naturally
+            let snapshot = {
+                let pf = per_file.lock().await;
+                BatchProgress {
+                    total,
+                    completed,
+                    failed,
+                    cancelled: cancel.load(std::sync::atomic::Ordering::Relaxed),
+                    per_file: pf.clone(),
+                }
+            };
+            let _ = app_handle.emit(EVT_BATCH_PROGRESS, snapshot);
         }
     });
 
