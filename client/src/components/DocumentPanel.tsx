@@ -225,24 +225,28 @@ export function DocumentPanel() {
         )}
         {documents.map((doc) => (
           <li key={doc.id} className={doc.id === documentId ? "panel__list-item active" : "panel__list-item"}>
+            <div className="doc-button__row" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+
             <button
               type="button"
+              className="doc-button"
+              onClick={() => handleSelectDocument(doc.id)}
+            >
+              <div className="doc-button__meta">
+                <strong>{doc.name}</strong>
               <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
                 <button type="button" onClick={() => removeDocument(doc.id)}>
                   {isChinese ? "删除" : "Delete"}
                 </button>
               </div>
 
-              className="doc-button"
-              onClick={() => handleSelectDocument(doc.id)}
-            >
-              <div className="doc-button__meta">
-                <strong>{doc.name}</strong>
                 <span className="panel__list-subtitle">{doc.id}</span>
               </div>
               <time dateTime={new Date(doc.uploadedAt).toISOString()}>
                 {new Date(doc.uploadedAt).toLocaleTimeString()}
               </time>
+            </div>
+
             </button>
           </li>
         ))}

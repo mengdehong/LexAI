@@ -25,27 +25,20 @@ class RPCError(Exception):
 
 
 settings = get_settings()
-EMBEDDER: Any | None = None
-QDRANT_CLIENT: Any | None = None
+EMBEDDER = services.get_embedder(settings.embedding_model_name)
+QDRANT_CLIENT = services.create_qdrant_client(settings.qdrant_host)
 
 
 def _get_shared_embedder(_: str) -> Any:
-    global EMBEDDER
-    if EMBEDDER is None:
-        EMBEDDER = services.get_embedder.__wrapped__(settings.embedding_model_name)  # type: ignore[attr-defined]
     return EMBEDDER
 
 
 def _get_shared_qdrant(_: str) -> Any:
-    global QDRANT_CLIENT
-    if QDRANT_CLIENT is None:
-        QDRANT_CLIENT = services.create_qdrant_client.__wrapped__(settings.qdrant_host)  # type: ignore[attr-defined]
     return QDRANT_CLIENT
 
 
-# Route calls through shared instances so repeated requests don't reload heavy deps
 services.get_embedder = services.lru_cache()(  # type: ignore[assignment]
-    lambda model_name: _get_shared_embedder(model_name)
+    lambda model_name: EMBEDDER if model_name == settings.embedding_model_name else services.get_embedder.__wrapped__(model_name)
 )
 services.create_qdrant_client = _get_shared_qdrant  # type: ignore[assignment]
 
