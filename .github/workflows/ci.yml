@@ -140,34 +140,54 @@ jobs:
           VENV_PYTHON=$(python -c "import pathlib, sys; root = pathlib.Path('backend/.venv').resolve(); path = root / ('Scripts/python.exe' if sys.platform.startswith('win') else 'bin/python'); print(path)")
           echo "VENV_PYTHON=$VENV_PYTHON" >> $GITHUB_ENV
 
-      - name: Install backend build deps
+      - name: Ensure 3rd/pdf-extract exists (fallback clone)
+        shell: pwsh
         run: |
-          "$VENV_PYTHON" -m pip install --upgrade pip
-          "$VENV_PYTHON" -m pip install -r backend/requirements-build.txt
+          if (-not (Test-Path '3rd/pdf-extract/Cargo.toml')) {
+            Write-Host "3rd/pdf-extract missing; cloning fallback repo..."
+            git clone --depth=1 https://github.com/jrmuizel/pdf-extract 3rd/pdf-extract
+          }
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install backend build deps
+        shell: pwsh
+        run: |
+          & $env:VENV_PYTHON -m pip install --upgrade pip
+          & $env:VENV_PYTHON -m pip install -r backend/requirements-build.txt
 
       - name: Build rust_core extension (Windows)
         working-directory: backend/rust_core
+        shell: pwsh
         run: |
-          "$VENV_PYTHON" -m pip install maturin==1.9.6
-          "$VENV_PYTHON" -m maturin develop --release
+          & $env:VENV_PYTHON -m pip install maturin==1.9.6
+          & $env:VENV_PYTHON -m maturin develop --release
 
       - name: PyInstaller build rpc_server.exe
         working-directory: backend
+        shell: pwsh
         run: |
-          "$VENV_PYTHON" build.py
+          & $env:VENV_PYTHON build.py
 
       - name: Smoke test rpc_server.exe (stdin JSON-RPC)
         shell: pwsh
         run: |
           $exe = Resolve-Path 'backend/dist/rpc_server/rpc_server.exe'
           if (-not (Test-Path $exe)) { throw "rpc_server.exe not found at $exe" }
-          $p = Start-Process -FilePath $exe -NoNewWindow -PassThru -RedirectStandardInput pipe -RedirectStandardOutput pipe
+          $psi = New-Object System.Diagnostics.ProcessStartInfo
+          $psi.FileName = $exe
+          $psi.RedirectStandardInput = $true
+          $psi.RedirectStandardOutput = $true
+          $psi.RedirectStandardError = $true
+          $psi.UseShellExecute = $false
+          $p = [System.Diagnostics.Process]::Start($psi)
           $req = '{"jsonrpc":"2.0","id":1,"method":"health","params":{}}'
           $p.StandardInput.WriteLine($req)
           $p.StandardInput.Flush()
           $line = $p.StandardOutput.ReadLine()
           $p.Kill()
           Write-Host "Response: $line"
-          $resp = ConvertFrom-Json $line
+          $resp = $line | ConvertFrom-Json
           if ($resp.result.status -ne 'ok') { throw "unexpected response: $line" }
 

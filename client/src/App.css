@@ -1443,6 +1443,14 @@ button:disabled {
   .term-table td {
     border-color: rgba(148, 163, 184, 0.3);
   }
+
+  /* Scrollbar theming for dark mode */
+  *::-webkit-scrollbar { height: 10px; width: 10px; }
+  *::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.35);
+    border-radius: 8px;
+  }
+  *::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.5); }
 }
 
 /* macOS-like blurred header with subtle gradient */
