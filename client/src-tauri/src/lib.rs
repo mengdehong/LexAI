@@ -604,6 +604,11 @@ async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::piped());
     command.env("QDRANT__STORAGE", storage_dir.to_string_lossy().to_string());
+    // Force UTF-8 IO and reduce noisy HF hub warnings
+    command.env("PYTHONIOENCODING", "utf-8");
+    command.env("PYTHONUTF8", "1");
+    command.env("HF_HUB_ENABLE_HF_XET", "0");
+    command.env("HF_HUB_DISABLE_TELEMETRY", "1");
 
     #[cfg(target_os = "linux")]
     {

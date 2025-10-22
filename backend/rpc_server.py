@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 import traceback
 import uuid
@@ -185,7 +186,22 @@ async def handle_payload(payload: str) -> Dict[str, Any]:
     return make_success_response(request_id, result)
 
 
+def _configure_stdio_utf8() -> None:
+    try:
+        # Prefer explicit UTF-8 regardless of console codepage (e.g., GBK)
+        if hasattr(sys, "stdout") and hasattr(sys.stdout, "reconfigure"):
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        if hasattr(sys, "stderr") and hasattr(sys.stderr, "reconfigure"):
+            sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+        os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+        os.environ.setdefault("PYTHONUTF8", "1")
+    except Exception:
+        # Best effort; ignore if Python lacks reconfigure (older runtimes)
+        pass
+
+
 def main() -> None:
+    _configure_stdio_utf8()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
@@ -199,7 +215,8 @@ def main() -> None:
             continue
 
         response = loop.run_until_complete(handle_payload(payload))
-        sys.stdout.write(json.dumps(response, ensure_ascii=False) + "\n")
+        # ensure_ascii=True keeps stdout strictly ASCII (Unicode escaped)
+        sys.stdout.write(json.dumps(response, ensure_ascii=True) + "\n")
         sys.stdout.flush()
 
 
