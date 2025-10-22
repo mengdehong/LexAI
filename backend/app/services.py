@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
 from pathlib import Path
 from functools import lru_cache
@@ -84,7 +85,7 @@ def get_text_splitter() -> RecursiveCharacterTextSplitter:
 
 
 @lru_cache
-def get_embedder(model_name: str) -> "_SentenceTransformer | Any":
+def get_embedder(model_name: str, cache_dir: Optional[str] = None) -> "_SentenceTransformer | Any":
     try:
         module = import_module("sentence_transformers")
     except ImportError as exc:  # pragma: no cover - exercised during runtime
@@ -92,8 +93,24 @@ def get_embedder(model_name: str) -> "_SentenceTransformer | Any":
             "sentence-transformers package is required for embedding generation"
         ) from exc
 
+    # Resolve cache directory from env if not explicitly provided
+    if cache_dir is None:
+        cache_dir = (
+            os.environ.get("HUGGINGFACE_HUB_CACHE")
+            or os.environ.get("HF_HUB_CACHE")
+            or os.environ.get("HF_HOME")
+            or os.environ.get("TRANSFORMERS_CACHE")
+            or os.environ.get("SENTENCE_TRANSFORMERS_HOME")
+        )
+
     SentenceTransformer = getattr(module, "SentenceTransformer")
-    return SentenceTransformer(model_name)
+    try:
+        if cache_dir:
+            return SentenceTransformer(model_name, cache_folder=cache_dir)
+        return SentenceTransformer(model_name)
+    except TypeError:
+        # Older versions may not support cache_folder kwarg
+        return SentenceTransformer(model_name)
 
 
 def create_qdrant_client(destination: str) -> QdrantClient:

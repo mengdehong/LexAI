@@ -617,7 +617,13 @@ async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
     command.env("PYTHONUTF8", "1");
     command.env("HF_HUB_ENABLE_HF_XET", "0");
     command.env("HF_HUB_DISABLE_TELEMETRY", "1");
+    command.env("HF_HUB_DISABLE_SYMLINKS", "1");
+    command.env("PYTHONUNBUFFERED", "1");
     command.env("HF_HOME", hf_cache_dir.to_string_lossy().to_string());
+    command.env(
+        "HF_HUB_CACHE",
+        hf_cache_dir.to_string_lossy().to_string(),
+    );
     command.env(
         "HUGGINGFACE_HUB_CACHE",
         hf_cache_dir.to_string_lossy().to_string(),

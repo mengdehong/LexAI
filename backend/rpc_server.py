@@ -6,10 +6,40 @@ import os
 import sys
 import traceback
 import uuid
+from functools import lru_cache
 from typing import Any, Awaitable, Callable, Dict
 
-from qdrant_client import models
 from pathlib import Path
+
+# Early bootstrap: force UTF-8 stdio and isolate HuggingFace caches BEFORE importing app/services
+try:
+    appdata = os.environ.get("APPDATA")
+    home = os.environ.get("USERPROFILE") or os.environ.get("HOME")
+    base = Path(appdata) if appdata else (Path(home) if home else Path.cwd())
+    cache_dir = base / "com.wenmou.lexai" / "hf-cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    for key in (
+        "HF_HOME",
+        "HUGGINGFACE_HUB_CACHE",
+        "HF_HUB_CACHE",
+        "TRANSFORMERS_CACHE",
+        "SENTENCE_TRANSFORMERS_HOME",
+    ):
+        os.environ.setdefault(key, str(cache_dir))
+    os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
+    os.environ.setdefault("HF_HUB_ENABLE_HF_XET", "0")
+    os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+    os.environ.setdefault("PYTHONUTF8", "1")
+    os.environ.setdefault("PYTHONUNBUFFERED", "1")
+    if hasattr(sys, "stdout") and hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys, "stderr") and hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+from qdrant_client import models
 
 from app.config import get_settings
 from app import services
@@ -25,24 +55,31 @@ class RPCError(Exception):
         self.code = code
         self.data = data
 
-
-settings = get_settings()
-EMBEDDER = services.get_embedder(settings.embedding_model_name)
-QDRANT_CLIENT = services.create_qdrant_client(settings.qdrant_host)
-
-
-def _get_shared_embedder(_: str) -> Any:
-    return EMBEDDER
+@lru_cache
+def get_settings_cached():
+    return get_settings()
 
 
-def _get_shared_qdrant(_: str) -> Any:
-    return QDRANT_CLIENT
+@lru_cache
+def get_embedder_cached():
+    s = get_settings_cached()
+    cache_dir = (
+        os.environ.get("HUGGINGFACE_HUB_CACHE")
+        or os.environ.get("HF_HUB_CACHE")
+        or os.environ.get("HF_HOME")
+        or os.environ.get("TRANSFORMERS_CACHE")
+        or os.environ.get("SENTENCE_TRANSFORMERS_HOME")
+    )
+    try:
+        return services.get_embedder(s.embedding_model_name, cache_dir=cache_dir)
+    except TypeError:
+        return services.get_embedder(s.embedding_model_name)
 
 
-services.get_embedder = services.lru_cache()(  # type: ignore[assignment]
-    lambda model_name: EMBEDDER if model_name == settings.embedding_model_name else services.get_embedder.__wrapped__(model_name)
-)
-services.create_qdrant_client = _get_shared_qdrant  # type: ignore[assignment]
+@lru_cache
+def get_qdrant_client_cached():
+    s = get_settings_cached()
+    return services.create_qdrant_client(s.qdrant_host)
 
 
 async def rpc_ping(_: Dict[str, Any]) -> Dict[str, Any]:
@@ -50,11 +87,44 @@ async def rpc_ping(_: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def rpc_health(_: Dict[str, Any]) -> Dict[str, Any]:
+    s = get_settings_cached()
     return {
         "status": "ok",
-        "embedding_model": settings.embedding_model_name,
-        "qdrant_host": settings.qdrant_host,
+        "embedding_model": s.embedding_model_name,
+        "qdrant_host": s.qdrant_host,
         "collection": COLLECTION_NAME,
+    }
+
+
+async def rpc_health_plus(_: Dict[str, Any]) -> Dict[str, Any]:
+    s = get_settings_cached()
+    # probe embedder to ensure lazy init succeeds
+    _ = get_embedder_cached()
+    cache_dir = (
+        os.environ.get("HUGGINGFACE_HUB_CACHE")
+        or os.environ.get("HF_HUB_CACHE")
+        or os.environ.get("HF_HOME")
+        or os.environ.get("TRANSFORMERS_CACHE")
+        or os.environ.get("SENTENCE_TRANSFORMERS_HOME")
+    )
+    env_snapshot = {
+        k: os.environ.get(k)
+        for k in [
+            "HF_HOME",
+            "HUGGINGFACE_HUB_CACHE",
+            "HF_HUB_CACHE",
+            "TRANSFORMERS_CACHE",
+            "SENTENCE_TRANSFORMERS_HOME",
+            "HF_HUB_DISABLE_SYMLINKS",
+            "PYTHONIOENCODING",
+            "PYTHONUTF8",
+        ]
+    }
+    return {
+        "status": "ok",
+        "embedding_model": s.embedding_model_name,
+        "hf_cache_dir": cache_dir,
+        "env": env_snapshot,
     }
 
 
@@ -90,8 +160,9 @@ async def rpc_search_term_contexts(params: Dict[str, Any]) -> Dict[str, Any]:
     if not term:
         raise RPCError(-32602, "term is required")
 
+    embedder = get_embedder_cached()
     query_vector = await asyncio.to_thread(
-        EMBEDDER.encode,
+        embedder.encode,
         term,
         convert_to_numpy=True,
     )
@@ -106,8 +177,9 @@ async def rpc_search_term_contexts(params: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     try:
+        client = get_qdrant_client_cached()
         hits = await asyncio.to_thread(
-            QDRANT_CLIENT.search,
+            client.search,
             collection_name=COLLECTION_NAME,
             query_vector=query_vector.tolist(),
             query_filter=query_filter,
@@ -130,6 +202,7 @@ async def rpc_search_term_contexts(params: Dict[str, Any]) -> Dict[str, Any]:
 RPC_METHODS: Dict[str, Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]] = {
     "ping": rpc_ping,
     "health": rpc_health,
+    "health_plus": rpc_health_plus,
     "upload_document": rpc_upload_document,
     "search_term_contexts": rpc_search_term_contexts,
 }
@@ -221,6 +294,7 @@ def _ensure_hf_cache_env() -> None:
 
 
 def main() -> None:
+    # Redundant safety to ensure env is correct in long-running sessions
     _ensure_hf_cache_env()
     _configure_stdio_utf8()
     loop = asyncio.new_event_loop()
