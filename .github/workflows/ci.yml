@@ -34,6 +34,7 @@ jobs:
 
       - name: Install client dependencies (include dev)
         run: npm ci --include=dev
+        working-directory: client
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -46,7 +47,7 @@ jobs:
 
       - name: Run backend tests
         run: pytest -q backend
-        working-directory: client
+        working-directory: .
 
       - name: Build React client
         run: npm run build

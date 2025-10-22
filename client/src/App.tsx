@@ -10,7 +10,6 @@ import { GlobalTermbaseView } from "./components/GlobalTermbaseView";
 import { SettingsView } from "./components/SettingsView";
 import { OnboardingView } from "./components/OnboardingView";
 import { ReviewCenter } from "./components/ReviewCenter";
-import { DiagnosticsPanel } from "./components/DiagnosticsPanel";
 import { loadConfig, type DefinitionLanguage } from "./lib/configStore";
 import { useAppState } from "./state/AppState";
 import { loadSessionState, saveSessionState, type SessionState, type SessionView } from "./lib/sessionStore";
@@ -30,10 +29,10 @@ function Workspace() {
       <div className="workspace__column">
         <DocumentPanel />
         <ExtractedViewer />
+        <ContextPanel />
       </div>
       <div className="workspace__column">
         <TermsPanel />
-        <ContextPanel />
       </div>
     </div>
   );
@@ -51,7 +50,7 @@ function App() {
   const [hasOnboardingMapping, setHasOnboardingMapping] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
   const [enforceOnboarding, setEnforceOnboarding] = useState(true);
-  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  // Diagnostics is now accessible from Settings; no topbar state needed
   const [generatorOpen, setGeneratorOpen] = useState(false);
   const [termbaseRefreshToken, setTermbaseRefreshToken] = useState(0);
   const [, setReviewDueCount] = useState(0); // hidden in UI; keep setter for backend updates
@@ -311,9 +310,7 @@ function App() {
                 {definitionLanguage === 'zh-CN' ? '设置' : 'Settings'}
               </button>
             </nav>
-            <button className="topbar__button" onClick={() => setDiagnosticsOpen(true)} disabled={generatorOpen}>
-              {definitionLanguage === "zh-CN" ? "诊断" : "Diagnostics"}
-            </button>
+            {/* Diagnostics entry moved into Settings */}
             <button className="topbar__cta" onClick={() => setGeneratorOpen(true)} disabled={showOnboarding || generatorOpen}>
               {generatorLabel}
             </button>
@@ -361,11 +358,6 @@ function App() {
                 setActiveView("settings");
               }}
               onComplete={(options) => {
-        {diagnosticsOpen && (
-          <div className="onboarding-modal-layer">
-            <DiagnosticsPanel onClose={() => setDiagnosticsOpen(false)} />
-          </div>
-        )}
                 setGeneratorOpen(false);
                 if (options?.nextView) {
                   setActiveView(options.nextView);

@@ -56,3 +56,4 @@ demo.md
 *.pyd
 backend/rust_core/target/
 client/src-tauri/resources/rpc_server
+backend/target

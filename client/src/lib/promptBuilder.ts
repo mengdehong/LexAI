@@ -28,8 +28,26 @@ const PROFICIENCY_GUIDANCE: Record<OnboardingProfile["proficiency"], string> = {
 
 export function buildTermExtractionPrompt(text: string, language: DefinitionLanguage): string {
   const instruction = LANGUAGE_INSTRUCTIONS[language] ?? LANGUAGE_INSTRUCTIONS.en;
-  return `Analyze the following document and extract the most important terminology. ${instruction} Respond with a JSON array of objects in the shape {"term": "...", "definition": "..."}. Only return JSON.
----
+  return `You are a high‑recall, high‑precision terminology mining assistant.
+${instruction}
+
+Output format:
+- Return a MINIFIED JSON array only; each element is {"term":"...","definition":"..."}.
+- No extra keys, no markdown, no comments, no trailing commas.
+
+Targets:
+- If the document is long/technical, return 80–120 unique terms; if medium, 40–80; if short, 20–40.
+- Always prefer MORE high‑quality terms over fewer (as long as precision stays high).
+
+Extraction rules:
+1) INCLUDE domain‑specific nouns/proper nouns, multi‑word noun phrases (≤ 8 words), acronyms/abbreviations (define their expansion in the definition), named methods/models/protocols/standards/datasets/metrics/architectures/libraries/organizations/regulations.
+2) EXCLUDE: function words, generic verbs, boilerplate phrases (e.g., "introduction", "result"), full sentences, vague concepts without domain specificity, hallucinated terms not present or strongly implied.
+3) CANONICALIZE: prefer the longest meaningful form; collapse variants (plurals, hyphenation, casing) into one term entry; strictly de‑duplicate.
+4) SCOPE: prioritize items central to the document’s theme; avoid section titles unless they are specific proper nouns.
+5) DEFINITION: 1–2 crisp sentences describing what it is, its purpose, and a key property; do not repeat the term verbatim without explanation; no markdown.
+
+Process (internal): scan headings/abstract/tables/figures first, then body; collect candidates; unify and dedupe; apply the rules; then output JSON.
+
 Document:
 ${text}`;
 }
@@ -80,10 +98,17 @@ export function buildTermExpansionPrompt(
 ): string {
   const { term, definition, definitionCn, domain } = payload;
   const focusDomain = domain?.trim().length ? domain.trim() : "general professional communication";
-  const languageDirection =
-    language === "zh-CN"
-      ? "Use Simplified Chinese for all generated content unless the term itself requires English."
-      : "Respond in English unless the term itself must remain in another language.";
+  const languageDirection = (() => {
+    if (language === "zh-CN") {
+      // Preserve legacy wording expected by tests while adding the new constraint.
+      return (
+        "Use Simplified Chinese for all generated content unless the term itself requires English. " +
+        "For usage_scenario and related_terms: respond in Simplified Chinese. " +
+        "For example_sentences: ALWAYS use natural English (US), even if other content is Chinese."
+      );
+    }
+    return "Respond in English. Example sentences MUST be in English (US).";
+  })();
 
   const supplemental = definitionCn?.trim().length
     ? `Existing bilingual definitions:

@@ -863,6 +863,22 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* Settings: diagnostics toggle full-width, near-white bar style */
+.settings-diagnostics-toggle {
+  display: block;
+  width: 100%;
+  text-align: center;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  color: #0f172a;
+  padding: 0.6rem 0.9rem;
+}
+.settings-diagnostics-toggle:hover,
+.settings-diagnostics-toggle:focus {
+  background: #f8fafc;
+}
+
 .mapping-list {
   display: flex;
   flex-direction: column;
