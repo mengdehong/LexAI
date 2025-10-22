@@ -49,6 +49,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: 'backend/requirements-build.txt'
 
       - name: Prepare backend virtualenv
         shell: bash
@@ -85,6 +87,15 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: "rustfmt, clippy"
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            client/src-tauri
+            backend/rust_core
+            3rd/pdf-extract
+          cache-on-failure: true
 
       - name: Cargo fmt
         run: cargo fmt --all -- --check
