@@ -9,35 +9,8 @@ import uuid
 from functools import lru_cache
 from typing import Any, Awaitable, Callable, Dict
 
-from pathlib import Path
-
-# Early bootstrap: force UTF-8 stdio and isolate HuggingFace caches BEFORE importing app/services
-try:
-    appdata = os.environ.get("APPDATA")
-    home = os.environ.get("USERPROFILE") or os.environ.get("HOME")
-    base = Path(appdata) if appdata else (Path(home) if home else Path.cwd())
-    cache_dir = base / "com.wenmou.lexai" / "hf-cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    for key in (
-        "HF_HOME",
-        "HUGGINGFACE_HUB_CACHE",
-        "HF_HUB_CACHE",
-        "TRANSFORMERS_CACHE",
-        "SENTENCE_TRANSFORMERS_HOME",
-    ):
-        os.environ.setdefault(key, str(cache_dir))
-    os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS", "1")
-    os.environ.setdefault("HF_HUB_ENABLE_HF_XET", "0")
-    os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
-    os.environ.setdefault("PYTHONIOENCODING", "utf-8")
-    os.environ.setdefault("PYTHONUTF8", "1")
-    os.environ.setdefault("PYTHONUNBUFFERED", "1")
-    if hasattr(sys, "stdout") and hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    if hasattr(sys, "stderr") and hasattr(sys.stderr, "reconfigure"):
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
-except Exception:
-    pass
+from app.bootstrap import bootstrap_env as _bootstrap_env
+_ = _bootstrap_env()  # set env & UTF-8 before any heavy imports
 
 from qdrant_client import models
 
