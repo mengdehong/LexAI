@@ -586,8 +586,19 @@ async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
     }
     #[cfg(windows)]
     {
+        use std::env;
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000);
+        // Ensure bundled DLLs/.pyd can be resolved by the child process
+        let current_path = env::var("PATH").unwrap_or_default();
+        let internal_dir = resource_dir.join("_internal");
+        let mut paths = Vec::new();
+        paths.push(resource_dir.to_string_lossy().to_string());
+        paths.push(internal_dir.to_string_lossy().to_string());
+        if !current_path.is_empty() {
+            paths.push(current_path);
+        }
+        command.env("PATH", paths.join(";"));
     }
 
     let child = command

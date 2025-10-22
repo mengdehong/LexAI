@@ -1381,11 +1381,18 @@ button:disabled {
 @media (prefers-color-scheme: dark) {
   :root {
     color: #e2e8f0;
-    background-color: #0f172a;
+    background-color: #0c1118;
+    --surface: rgba(20, 27, 36, 0.92);
+    --surface-alt: rgba(28, 38, 51, 0.82);
+    --border: rgba(148, 163, 184, 0.22);
+    --text-muted: #cbd5e1;
+    --primary: #0A84FF;
+    --primary-strong: #006FEA;
+    --primary-soft: rgba(10, 132, 255, 0.18);
   }
 
   body {
-    background: linear-gradient(180deg, #0f172a 0%, #111827 100%);
+    background: linear-gradient(180deg, #0c1118 0%, #0e141b 100%);
   }
 
   .panel {
@@ -1406,6 +1413,27 @@ button:disabled {
     background: rgba(15, 23, 42, 0.7);
     border-color: rgba(59, 130, 246, 0.4);
     color: #e2e8f0;
+  }
+
+  .reading-panel__explanation,
+  .onboarding-form input,
+  .onboarding-form textarea,
+  .onboarding-form select,
+  .provider-form__row input,
+  .provider-form__row select,
+  .mapping-entry__controls input,
+  .mapping-entry__controls select,
+  .preferences-form select,
+  .term-table__input,
+  .term-table__textarea,
+  .settings-diagnostics-toggle {
+    background: var(--surface);
+    color: #e2e8f0;
+    border-color: var(--border);
+  }
+
+  .onboarding-secondary:hover {
+    background: rgba(10, 132, 255, 0.14);
   }
 
   .term-table th {
