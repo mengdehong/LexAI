@@ -4,7 +4,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicU64, Ordering},
         Arc,
     },
 };
@@ -244,9 +244,11 @@ pub struct BatchProgress {
     per_file: HashMap<String, String>,
 }
 
+#[allow(dead_code)]
 const EVT_BATCH_PROGRESS: &str = "batch://progress";
 
 #[tauri::command]
+#[allow(dead_code)]
 async fn start_batch_upload(
     files: Vec<BatchFileSpec>,
     app: tauri::AppHandle,
@@ -332,6 +334,7 @@ async fn start_batch_upload(
 }
 
 #[tauri::command]
+#[allow(dead_code)]
 async fn cancel_batch(batch_state: State<'_, BatchState>) -> Result<bool, String> {
     batch_state
         .cancel
@@ -341,13 +344,16 @@ async fn cancel_batch(batch_state: State<'_, BatchState>) -> Result<bool, String
 
 
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 struct BatchFileSpec {
     file_path: String,
     file_name: String,
 }
 
 #[derive(Clone, Default)]
+#[allow(dead_code)]
 struct BatchState {
+    #[allow(dead_code)]
     cancel: Arc<std::sync::atomic::AtomicBool>,
 }
 
@@ -498,13 +504,18 @@ impl RpcManager {
 }
 
 async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
-    let mut resource_path = app
+    let base_resource_path = app
         .path()
         .resolve(
             "resources/rpc_server/rpc_server",
             tauri::path::BaseDirectory::Resource,
         )
         .map_err(|err| err.to_string())?;
+
+    #[cfg(windows)]
+    let mut resource_path = base_resource_path;
+    #[cfg(not(windows))]
+    let resource_path = base_resource_path;
 
     // On Windows, the PyInstaller binary has .exe extension
     #[cfg(windows)]
@@ -653,6 +664,7 @@ async fn restart_backend(
 }
 
 #[tauri::command]
+#[allow(non_snake_case)]
 async fn search_term_contexts(
     doc_id: Option<String>,
     docId: Option<String>,
