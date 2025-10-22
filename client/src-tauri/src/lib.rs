@@ -535,10 +535,12 @@ impl RpcManager {
 }
 
 async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
+    // BaseDirectory::Resource already points to the resources directory.
+    // Primary candidate inside resources: "rpc_server/rpc_server(.exe)".
     let base_resource_path = app
         .path()
         .resolve(
-            "resources/rpc_server/rpc_server",
+            "rpc_server/rpc_server",
             tauri::path::BaseDirectory::Resource,
         )
         .map_err(|err| err.to_string())?;
@@ -554,6 +556,18 @@ async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
         let candidate = resource_path.with_extension("exe");
         if candidate.exists() {
             resource_path = candidate;
+        } else {
+            // Fallback to older packaging layout that mistakenly nested an extra resources/.
+            let alt = app
+                .path()
+                .resolve(
+                    "resources/rpc_server/rpc_server.exe",
+                    tauri::path::BaseDirectory::Resource,
+                )
+                .map_err(|err| err.to_string())?;
+            if alt.exists() {
+                resource_path = alt;
+            }
         }
     }
 
@@ -620,10 +634,7 @@ async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
     command.env("HF_HUB_DISABLE_SYMLINKS", "1");
     command.env("PYTHONUNBUFFERED", "1");
     command.env("HF_HOME", hf_cache_dir.to_string_lossy().to_string());
-    command.env(
-        "HF_HUB_CACHE",
-        hf_cache_dir.to_string_lossy().to_string(),
-    );
+    command.env("HF_HUB_CACHE", hf_cache_dir.to_string_lossy().to_string());
     command.env(
         "HUGGINGFACE_HUB_CACHE",
         hf_cache_dir.to_string_lossy().to_string(),
@@ -1249,26 +1260,88 @@ async fn apply_review_result(pool: &SqlitePool, id: i64, known: bool) -> Result<
     Ok(())
 }
 
+fn normalize_lower(s: &str) -> String {
+    s.to_ascii_lowercase()
+}
+
+fn provider_aliases(app: &tauri::AppHandle, provider: &str) -> Vec<String> {
+    let mut aliases = vec![provider.to_string()];
+    if let Ok(config_store) = app.store("lexai-config.store") {
+        if let Some(serde_json::Value::Array(entries)) = config_store.get("providers") {
+            let input = normalize_lower(provider);
+            for entry in entries {
+                if let Some(obj) = entry.as_object() {
+                    let id = obj.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                    let name = obj.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    let vendor = obj.get("vendor").and_then(|v| v.as_str()).unwrap_or("");
+                    let id_l = normalize_lower(id);
+                    let name_l = normalize_lower(name);
+                    let vendor_l = normalize_lower(vendor);
+                    let mut matched = input == id_l || input == name_l || input == vendor_l;
+                    if !matched && input == "google" && vendor_l == "gemini" {
+                        matched = true;
+                    }
+                    if matched {
+                        if !id.is_empty() {
+                            aliases.push(id.to_string());
+                        }
+                        if !vendor.is_empty() {
+                            aliases.push(vendor.to_string());
+                        }
+                        if vendor_l == "gemini" {
+                            aliases.push("google".to_string());
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    aliases.sort();
+    aliases.dedup();
+    aliases
+}
+
 #[tauri::command]
 async fn save_api_key(
     provider: String,
     key: String,
     manager: State<'_, SecretsManager>,
+    app: tauri::AppHandle,
 ) -> Result<(), String> {
-    manager.save_api_key(&provider, &key).await
+    let variants = provider_aliases(&app, &provider);
+    for p in variants {
+        manager.save_api_key(&p, &key).await?;
+    }
+    Ok(0 == 1).map(|_| ()).or::<String>(Ok(()))
 }
 
 #[tauri::command]
 async fn get_api_key(
     provider: String,
     manager: State<'_, SecretsManager>,
+    app: tauri::AppHandle,
 ) -> Result<Option<String>, String> {
-    manager.get_api_key(&provider).await
+    for p in provider_aliases(&app, &provider) {
+        if let Some(val) = manager.get_api_key(&p).await? {
+            return Ok(Some(val));
+        }
+    }
+    Ok(None)
 }
 
 #[tauri::command]
-async fn has_api_key(provider: String, manager: State<'_, SecretsManager>) -> Result<bool, String> {
-    manager.has_api_key(&provider).await
+async fn has_api_key(
+    provider: String,
+    manager: State<'_, SecretsManager>,
+    app: tauri::AppHandle,
+) -> Result<bool, String> {
+    for p in provider_aliases(&app, &provider) {
+        if manager.has_api_key(&p).await? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 async fn init_database(db_path: &Path) -> Result<SqlitePool, sqlx::Error> {

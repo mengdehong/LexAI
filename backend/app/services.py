@@ -153,7 +153,12 @@ async def process_and_embed_document(file_path: str, document_id: str) -> str:
             extracted_text = await asyncio.to_thread(rust_core.extract_text, file_path)
         except Exception as exc:  # pragma: no cover - rust_core failure surfaces at runtime
             raise _classify_extraction_failure(exc) from exc
-    text = extracted_text.strip()
+    # Sanitize text: replace invalid surrogates to avoid UTF-8 encode errors on Windows
+    try:
+        text = extracted_text.encode("utf-8", errors="replace").decode("utf-8")
+    except Exception:
+        text = extracted_text
+    text = text.strip()
 
     if not text:
         raise DocumentProcessingError(
