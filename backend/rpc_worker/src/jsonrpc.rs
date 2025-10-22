@@ -197,8 +197,10 @@ mod tests {
             reader: BufReader::new(std::io::stdin()),
             ctx: RpcContext {
                 qdrant: EmbeddedQdrant::new().unwrap(),
-                embeddings: EmbeddingService::new(std::sync::Arc::new(TokenizerService::new().unwrap())).unwrap(),
-                tokenizer: std::sync::Arc::new(TokenizerService::new().unwrap()),
+                embeddings: std::sync::Arc::new(
+                    EmbeddingService::new(std::sync::Arc::new(TokenizerService::new().unwrap()))
+                        .unwrap(),
+                ),
             },
             runtime: tokio::runtime::Runtime::new().unwrap(),
         };

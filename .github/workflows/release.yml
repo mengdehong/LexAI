@@ -57,15 +57,13 @@ jobs:
           submodules: false
 
       - name: Init submodules (if any)
-        if: hashFiles('.gitmodules') != ''
+        if: ${{ hashFiles('.gitmodules') != '' }}
         shell: bash
         run: |
           echo "Initializing submodules from .gitmodules"
 
       - name: Populate 3rd/pdf-extract for legacy tags
-        if: >-
-          hashFiles('.gitmodules') == '' &&
-          steps.vars.outputs.tag != ''
+        if: ${{ hashFiles('.gitmodules') == '' && steps.vars.outputs.tag != '' }}
         shell: bash
         run: |
           # Some legacy tags stored 3rd/pdf-extract as a gitlink without a .gitmodules entry.
@@ -113,7 +111,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install Linux dependencies
-        if: matrix.platform.os == 'ubuntu-latest'
+        if: ${{ matrix.platform.os == 'ubuntu-latest' }}
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -187,26 +185,28 @@ jobs:
 
           cp -R backend/dist/rpc_server client/src-tauri/resources/
 
-
-	      - name: Run backend unit tests (Linux only)
-	        if: matrix.platform.os == 'ubuntu-latest'
-	        shell: bash
-	        run: |
-	          python -m pip install --upgrade pip
-	          python -m pip install pytest fastapi httpx
-	          pytest -q backend
-
-	      - name: Run client unit tests
-	        run: npm run -s test
-	        working-directory: client
-
-	      - name: Cargo test
-	        run: cargo test --all --release
-	        working-directory: client/src-tauri
-
       - name: Install frontend dependencies (include dev)
         run: npm ci --include=dev
         working-directory: client
+
+      - name: Run client unit tests
+        run: |
+          npm ci --include=dev
+          npm run -s test
+        working-directory: client
+
+      - name: Cargo test
+        run: cargo test --all --release
+        working-directory: client/src-tauri
+
+      - name: Run backend unit tests (Linux only)
+        if: ${{ matrix.platform.os == 'ubuntu-latest' }}
+        shell: bash
+        run: |
+          "$VENV_PYTHON" -m pip install --upgrade pip
+          "$VENV_PYTHON" -m pip install pytest fastapi httpx
+          "$VENV_PYTHON" -m pytest -q backend
+
 
       - name: Build Tauri bundle
         uses: tauri-apps/tauri-action@v0
