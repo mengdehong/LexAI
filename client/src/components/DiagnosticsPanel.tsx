@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/tauri";
 import { useLocale } from "../state/LocaleContext";
 
@@ -8,6 +8,16 @@ export function DiagnosticsPanel({ onClose }: { onClose?: () => void }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [payload, setPayload] = useState<Record<string, unknown> | null>(null);
+  const diagnosticsText = useMemo(() => {
+    if (!payload) return "";
+    const diag = payload["diagnostics"] as any;
+    const parts = [
+      `running=${diag?.running}`,
+      `exit_status=${diag?.exit_status ?? ""}`,
+      `stderr_tail=\n${diag?.stderr_tail ?? ""}`,
+    ];
+    return parts.join("\n");
+  }, [payload]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -58,6 +68,30 @@ export function DiagnosticsPanel({ onClose }: { onClose?: () => void }) {
           >
             {isChinese ? "重启" : "Restart"}
           </button>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await invoke("open_logs_dir");
+              } catch (err) {
+                setError(err instanceof Error ? err.message : String(err));
+              }
+            }}
+          >
+            {isChinese ? "打开日志目录" : "Open Logs Folder"}
+          </button>
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(diagnosticsText);
+              } catch (err) {
+                console.error("Failed to copy", err);
+              }
+            }}
+          >
+            {isChinese ? "复制诊断" : "Copy Diagnostics"}
+          </button>
           {onClose && (
             <button type="button" onClick={onClose}>
               {isChinese ? "关闭" : "Close"}
@@ -68,16 +102,48 @@ export function DiagnosticsPanel({ onClose }: { onClose?: () => void }) {
       {loading && <p className="panel__status">{isChinese ? "正在加载…" : "Loading…"}</p>}
       {error && <p className="panel__status error">{error}</p>}
       {payload && (
-        <ul className="panel__list">
-          {Object.entries(payload).map(([key, value]) => (
-            <li key={key} className="panel__list-item">
-              <div>
-                <strong>{key}</strong>
-                <span className="panel__list-subtitle">{String(value)}</span>
+        <div className="panel__list" style={{ gap: 12 }}>
+          <div className="panel__list-item">
+            <div>
+              <strong>{isChinese ? "健康状态" : "Health"}</strong>
+              <span className="panel__list-subtitle">{JSON.stringify(payload?.result ?? payload)}</span>
+            </div>
+          </div>
+          <div className="panel__list-item">
+            <div>
+              <strong>{isChinese ? "运行状态" : "Process"}</strong>
+              <span className="panel__list-subtitle">
+                {(() => {
+                  const diag = (payload as any).diagnostics || {};
+                  const rs = diag.running ? (isChinese ? "运行中" : "running") : (isChinese ? "已退出" : "exited");
+                  const ec = diag.exit_status !== undefined && diag.exit_status !== null ? ` (exit=${diag.exit_status})` : "";
+                  return `${rs}${ec}`;
+                })()}
+              </span>
+            </div>
+          </div>
+          {(() => {
+            const diag = (payload as any).diagnostics || {};
+            const tail = diag.stderr_tail as string | undefined;
+            if (!tail) return null;
+            return (
+              <div className="panel__list-item" style={{ display: "block" }}>
+                <div>
+                  <strong>{isChinese ? "错误输出尾部" : "Stderr tail"}</strong>
+                </div>
+                <pre style={{
+                  marginTop: 8,
+                  maxHeight: 220,
+                  overflow: "auto",
+                  background: "var(--surface-alt)",
+                  padding: "8px 10px",
+                  borderRadius: 8,
+                  whiteSpace: "pre-wrap"
+                }}>{tail}</pre>
               </div>
-            </li>
-          ))}
-        </ul>
+            );
+          })()}
+        </div>
       )}
     </section>
   );

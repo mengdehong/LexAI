@@ -121,3 +121,73 @@ jobs:
           set -euxo pipefail
           python -c 'import sys,json,subprocess; p=subprocess.Popen([sys.executable,"backend/rpc_server.py"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True); req={"jsonrpc":"2.0","id":1,"method":"health","params":{}}; p.stdin.write(json.dumps(req)+"\n"); p.stdin.flush(); line=p.stdout.readline().strip(); p.terminate(); print(line); resp=json.loads(line); assert resp.get("result", {}).get("status")=="ok", f"unexpected response: {resp}"'
 
+  windows-smoke:
+    runs-on: windows-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Prepare backend virtualenv
+        shell: bash
+        run: |
+          python -m venv backend/.venv
+          VENV_PYTHON=$(python -c "import pathlib, sys; root = pathlib.Path('backend/.venv').resolve(); path = root / ('Scripts/python.exe' if sys.platform.startswith('win') else 'bin/python'); print(path)")
+          echo "VENV_PYTHON=$VENV_PYTHON" >> $GITHUB_ENV
+
+      - name: Ensure 3rd/pdf-extract exists (fallback clone)
+        shell: pwsh
+        run: |
+          if (-not (Test-Path '3rd/pdf-extract/Cargo.toml')) {
+            Write-Host "3rd/pdf-extract missing; cloning fallback repo..."
+            git clone --depth=1 https://github.com/jrmuizel/pdf-extract 3rd/pdf-extract
+          }
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install backend build deps
+        shell: pwsh
+        run: |
+          & $env:VENV_PYTHON -m pip install --upgrade pip
+          & $env:VENV_PYTHON -m pip install -r backend/requirements-build.txt
+
+      - name: Build rust_core extension (Windows)
+        working-directory: backend/rust_core
+        shell: pwsh
+        run: |
+          & $env:VENV_PYTHON -m pip install maturin==1.9.6
+          & $env:VENV_PYTHON -m maturin develop --release
+
+      - name: PyInstaller build rpc_server.exe
+        working-directory: backend
+        shell: pwsh
+        run: |
+          & $env:VENV_PYTHON build.py
+
+      - name: Smoke test rpc_server.exe (stdin JSON-RPC)
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path 'backend/dist/rpc_server/rpc_server.exe'
+          if (-not (Test-Path $exe)) { throw "rpc_server.exe not found at $exe" }
+          $psi = New-Object System.Diagnostics.ProcessStartInfo
+          $psi.FileName = $exe
+          $psi.RedirectStandardInput = $true
+          $psi.RedirectStandardOutput = $true
+          $psi.RedirectStandardError = $true
+          $psi.UseShellExecute = $false
+          $p = [System.Diagnostics.Process]::Start($psi)
+          $req = '{"jsonrpc":"2.0","id":1,"method":"health","params":{}}'
+          $p.StandardInput.WriteLine($req)
+          $p.StandardInput.Flush()
+          $line = $p.StandardOutput.ReadLine()
+          $p.Kill()
+          Write-Host "Response: $line"
+          $resp = $line | ConvertFrom-Json
+          if ($resp.result.status -ne 'ok') { throw "unexpected response: $line" }
+

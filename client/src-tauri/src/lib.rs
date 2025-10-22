@@ -53,12 +53,17 @@ struct RpcClient {
     stdout: Arc<AsyncMutex<BufReader<ChildStdout>>>,
     stderr: Option<Arc<AsyncMutex<BufReader<ChildStderr>>>>,
     stderr_buf: Arc<AsyncMutex<Vec<String>>>,
+    log_file: Option<Arc<AsyncMutex<tokio_fs::File>>>,
     next_id: AtomicU64,
     response_timeout: Duration,
 }
 
 impl RpcClient {
-    fn new(mut child: Child, response_timeout: Duration) -> Result<Self, String> {
+    async fn new(
+        mut child: Child,
+        response_timeout: Duration,
+        log_path: Option<PathBuf>,
+    ) -> Result<Self, String> {
         let stdin = child
             .stdin
             .take()
@@ -69,12 +74,27 @@ impl RpcClient {
             .ok_or_else(|| "Child process stdout unavailable".to_string())?;
         let stderr = child.stderr.take();
 
+        let log_file = if let Some(path) = log_path {
+            match tokio_fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .await
+            {
+                Ok(f) => Some(Arc::new(AsyncMutex::new(f))),
+                Err(_) => None,
+            }
+        } else {
+            None
+        };
+
         let client = Self {
             child: Arc::new(AsyncMutex::new(child)),
             stdin: Arc::new(AsyncMutex::new(stdin)),
             stdout: Arc::new(AsyncMutex::new(BufReader::new(stdout))),
             stderr: stderr.map(|s| Arc::new(AsyncMutex::new(BufReader::new(s)))),
             stderr_buf: Arc::new(AsyncMutex::new(Vec::with_capacity(64))),
+            log_file,
             next_id: AtomicU64::new(1),
             response_timeout,
         };
@@ -82,6 +102,7 @@ impl RpcClient {
         if let Some(stderr_reader) = &client.stderr {
             let stderr_reader = stderr_reader.clone();
             let buf = client.stderr_buf.clone();
+            let log = client.log_file.clone();
             tauri::async_runtime::spawn(async move {
                 let mut line = String::new();
                 loop {
@@ -98,6 +119,11 @@ impl RpcClient {
                             if b.len() > 100 {
                                 let overflow = b.len() - 100;
                                 b.drain(0..overflow);
+                            }
+                            if let Some(file) = &log {
+                                if let Ok(mut f) = file.try_lock() {
+                                    let _ = f.write_all(line.as_bytes()).await;
+                                }
                             }
                         }
                         Err(_) => break,
@@ -563,6 +589,15 @@ async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
 
     fs::create_dir_all(&storage_dir).map_err(|err| err.to_string())?;
 
+    // logs dir
+    let logs_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| err.to_string())?
+        .join("logs");
+    fs::create_dir_all(&logs_dir).map_err(|err| err.to_string())?;
+    let log_path = logs_dir.join("rpc_server.log");
+
     let mut command = tokio::process::Command::new(resource_path);
     command.kill_on_drop(true);
     command.stdin(std::process::Stdio::piped());
@@ -586,14 +621,25 @@ async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
     }
     #[cfg(windows)]
     {
+        use std::env;
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000);
+        // Ensure bundled DLLs/.pyd can be resolved by the child process
+        let current_path = env::var("PATH").unwrap_or_default();
+        let internal_dir = resource_dir.join("_internal");
+        let mut paths = Vec::new();
+        paths.push(resource_dir.to_string_lossy().to_string());
+        paths.push(internal_dir.to_string_lossy().to_string());
+        if !current_path.is_empty() {
+            paths.push(current_path);
+        }
+        command.env("PATH", paths.join(";"));
     }
 
     let child = command
         .spawn()
         .map_err(|err| format!("Failed to spawn RPC worker: {err}"))?;
-    RpcClient::new(child, Duration::from_secs(30))
+    RpcClient::new(child, Duration::from_secs(30), Some(log_path)).await
 }
 
 #[tauri::command]
@@ -1320,6 +1366,7 @@ pub fn run() {
             fetch_backend_health,
             fetch_backend_diagnostics,
             restart_backend,
+            open_logs_dir,
             search_term_contexts,
             store_temp_document,
             upload_document,
@@ -1393,6 +1440,44 @@ fn sanitize_pdf_text(value: &str) -> String {
         .replace("\r\n", "\n")
         .replace('\r', "\n")
         .replace('\t', "    ")
+}
+
+#[tauri::command]
+async fn open_logs_dir(app: tauri::AppHandle) -> Result<bool, String> {
+    let logs_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| err.to_string())?
+        .join("logs");
+    fs::create_dir_all(&logs_dir).map_err(|err| err.to_string())?;
+
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("explorer")
+            .arg(logs_dir)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(true);
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg(logs_dir)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(true);
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(logs_dir)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        return Ok(true);
+    }
+
+    #[allow(unreachable_code)]
+    Ok(false)
 }
 
 #[cfg(test)]
