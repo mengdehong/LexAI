@@ -33,7 +33,7 @@ use tauri_plugin_stronghold::stronghold::Stronghold;
 use tokio::{
     fs as tokio_fs,
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    process::{Child, ChildStdin, ChildStdout, ChildStderr},
+    process::{Child, ChildStderr, ChildStdin, ChildStdout},
     sync::{oneshot, Mutex as AsyncMutex},
     time::{timeout, Duration},
 };
@@ -186,12 +186,19 @@ impl RpcClient {
         }
         let stderr_tail = {
             let buf = self.stderr_buf.lock().await;
-            if buf.is_empty() { None } else { Some(buf.join("\n")) }
+            if buf.is_empty() {
+                None
+            } else {
+                Some(buf.join("\n"))
+            }
         };
-        RpcDiagnostics { running, exit_status, stderr_tail }
+        RpcDiagnostics {
+            running,
+            exit_status,
+            stderr_tail,
+        }
     }
 }
-
 
 struct AppState {
     pool: SqlitePool,
@@ -209,7 +216,6 @@ struct StrongholdInner {
 impl StrongholdInner {
     fn ensure_client(&self) -> Result<StrongholdClient, String> {
         match self.stronghold.inner().get_client(&self.client_path) {
-
             Ok(client) => Ok(client),
             Err(ClientError::ClientDataNotPresent) => {
                 match self.stronghold.inner().load_client(&self.client_path) {
@@ -256,9 +262,12 @@ async fn start_batch_upload(
     batch_state: State<'_, BatchState>,
 ) -> Result<bool, String> {
     let client = rpc_manager.ensure_client(&app).await?;
-    batch_state.cancel.store(false, std::sync::atomic::Ordering::Relaxed);
+    batch_state
+        .cancel
+        .store(false, std::sync::atomic::Ordering::Relaxed);
     let total = files.len();
-    let per_file: Arc<AsyncMutex<HashMap<String, String>>> = Arc::new(AsyncMutex::new(HashMap::new()));
+    let per_file: Arc<AsyncMutex<HashMap<String, String>>> =
+        Arc::new(AsyncMutex::new(HashMap::new()));
 
     let app_handle = app.clone();
     tauri::async_runtime::spawn({
@@ -342,7 +351,6 @@ async fn cancel_batch(batch_state: State<'_, BatchState>) -> Result<bool, String
     Ok(true)
 }
 
-
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 struct BatchFileSpec {
@@ -358,7 +366,6 @@ struct BatchState {
 }
 
 impl SecretsManager {
-
     fn new(inner: StrongholdInner) -> Self {
         Self {
             inner: Arc::new(AsyncMutex::new(inner)),
@@ -382,8 +389,6 @@ impl SecretsManager {
                 .insert(record_key.clone(), sanitized.as_bytes().to_vec(), None)
                 .map_err(|err| err.to_string())?;
         }
-
-
 
         guard.stronghold.save().map_err(|err| err.to_string())
     }
@@ -547,8 +552,6 @@ async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
                 "RPC resource internal directory missing at {}",
                 internal_dir.display()
             ));
-
-
         }
     }
 
@@ -586,8 +589,6 @@ async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000);
     }
-
-
 
     let child = command
         .spawn()
@@ -673,10 +674,9 @@ async fn search_term_contexts(
     app: tauri::AppHandle,
     rpc_manager: State<'_, RpcManager>,
 ) -> Result<Vec<String>, String> {
-    let doc_id = doc_id
-        .or(docId)
-        .or(document_id)
-        .ok_or_else(|| "missing 'doc_id' (accepted keys: doc_id, docId, document_id)".to_string())?;
+    let doc_id = doc_id.or(docId).or(document_id).ok_or_else(|| {
+        "missing 'doc_id' (accepted keys: doc_id, docId, document_id)".to_string()
+    })?;
     let client = rpc_manager.ensure_client(&app).await?;
     let response = client
         .call(
@@ -736,8 +736,8 @@ async fn upload_document(
         }
     }?;
 
-    let mut payload: UploadPayload = serde_json::from_value(response)
-        .map_err(|err| format!("Invalid RPC response: {err}"))?;
+    let mut payload: UploadPayload =
+        serde_json::from_value(response).map_err(|err| format!("Invalid RPC response: {err}"))?;
 
     if payload.document_id.trim().is_empty() {
         return Err("Upload failed: missing document_id".to_string());
