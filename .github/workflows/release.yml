@@ -24,7 +24,6 @@ jobs:
     strategy:
       matrix:
         platform:
-          - { os: ubuntu-latest, name: Linux }
           - { os: windows-latest, name: Windows }
         #   - { os: macos-13, name: macOS-Intel }
           - { os: macos-14, name: macOS-AppleSilicon }
