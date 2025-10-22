@@ -9,6 +9,7 @@ import uuid
 from typing import Any, Awaitable, Callable, Dict
 
 from qdrant_client import models
+from pathlib import Path
 
 from app.config import get_settings
 from app import services
@@ -200,7 +201,27 @@ def _configure_stdio_utf8() -> None:
         pass
 
 
+def _ensure_hf_cache_env() -> None:
+    # Default HF caches to application data to avoid Windows path/permissions issues
+    appdata = os.environ.get("APPDATA")
+    home = os.environ.get("USERPROFILE") or os.environ.get("HOME")
+    base = Path(appdata) if appdata else (Path(home) if home else Path.cwd())
+    cache_dir = base / "com.wenmou.lexai" / "hf-cache"
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    os.environ.setdefault("HF_HOME", str(cache_dir))
+    os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(cache_dir))
+    os.environ.setdefault("TRANSFORMERS_CACHE", str(cache_dir))
+    os.environ.setdefault("SENTENCE_TRANSFORMERS_HOME", str(cache_dir))
+    # Avoid symlink-related quirks on Windows
+    os.environ.setdefault("HF_HUB_ENABLE_HF_XET", "0")
+    os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+
+
 def main() -> None:
+    _ensure_hf_cache_env()
     _configure_stdio_utf8()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)

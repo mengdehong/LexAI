@@ -598,12 +598,38 @@ async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
     fs::create_dir_all(&logs_dir).map_err(|err| err.to_string())?;
     let log_path = logs_dir.join("rpc_server.log");
 
+    // huggingface cache dir (avoid user home cache path issues on Windows)
+    let hf_cache_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| err.to_string())?
+        .join("hf-cache");
+    fs::create_dir_all(&hf_cache_dir).map_err(|err| err.to_string())?;
+
     let mut command = tokio::process::Command::new(resource_path);
     command.kill_on_drop(true);
     command.stdin(std::process::Stdio::piped());
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::piped());
     command.env("QDRANT__STORAGE", storage_dir.to_string_lossy().to_string());
+    // Force UTF-8 IO and reduce noisy HF hub warnings; ensure local cache in app_data
+    command.env("PYTHONIOENCODING", "utf-8");
+    command.env("PYTHONUTF8", "1");
+    command.env("HF_HUB_ENABLE_HF_XET", "0");
+    command.env("HF_HUB_DISABLE_TELEMETRY", "1");
+    command.env("HF_HOME", hf_cache_dir.to_string_lossy().to_string());
+    command.env(
+        "HUGGINGFACE_HUB_CACHE",
+        hf_cache_dir.to_string_lossy().to_string(),
+    );
+    command.env(
+        "TRANSFORMERS_CACHE",
+        hf_cache_dir.to_string_lossy().to_string(),
+    );
+    command.env(
+        "SENTENCE_TRANSFORMERS_HOME",
+        hf_cache_dir.to_string_lossy().to_string(),
+    );
     // Force UTF-8 IO and reduce noisy HF hub warnings
     command.env("PYTHONIOENCODING", "utf-8");
     command.env("PYTHONUTF8", "1");
