@@ -1266,9 +1266,31 @@ fn normalize_lower(s: &str) -> String {
 
 fn provider_aliases(app: &tauri::AppHandle, provider: &str) -> Vec<String> {
     let mut aliases = vec![provider.to_string()];
+    let input_l = normalize_lower(provider);
+    
+    // Always add lowercase version
+    if input_l != provider { 
+        aliases.push(input_l.clone()); 
+    }
+    
+    // Generic vendor synonyms, tolerate UI label mismatches
+    if input_l == "google" || input_l == "gemini" { 
+        aliases.push("google".to_string()); 
+        aliases.push("gemini".to_string()); 
+        aliases.push("Google Gemini".to_string());
+    }
+    if input_l == "openai" { 
+        aliases.push("openai".to_string()); 
+        aliases.push("OpenAI".to_string());
+    }
+    if input_l == "ollama" { 
+        aliases.push("ollama".to_string()); 
+        aliases.push("Ollama".to_string());
+    }
+    
+    // Try to find matching provider in config and add all its attributes as aliases
     if let Ok(config_store) = app.store("lexai-config.store") {
         if let Some(serde_json::Value::Array(entries)) = config_store.get("providers") {
-            let input = normalize_lower(provider);
             for entry in entries {
                 if let Some(obj) = entry.as_object() {
                     let id = obj.get("id").and_then(|v| v.as_str()).unwrap_or("");
@@ -1277,19 +1299,33 @@ fn provider_aliases(app: &tauri::AppHandle, provider: &str) -> Vec<String> {
                     let id_l = normalize_lower(id);
                     let name_l = normalize_lower(name);
                     let vendor_l = normalize_lower(vendor);
-                    let mut matched = input == id_l || input == name_l || input == vendor_l;
-                    if !matched && input == "google" && vendor_l == "gemini" {
+                    
+                    // Match by any attribute (case-insensitive)
+                    let mut matched = input_l == id_l || input_l == name_l || input_l == vendor_l;
+                    
+                    // Special case: "google" matches gemini vendor
+                    if !matched && input_l == "google" && vendor_l == "gemini" {
                         matched = true;
                     }
+                    
                     if matched {
+                        // Add all variations as aliases
                         if !id.is_empty() {
                             aliases.push(id.to_string());
+                            aliases.push(normalize_lower(id));
+                        }
+                        if !name.is_empty() {
+                            aliases.push(name.to_string());
+                            aliases.push(normalize_lower(name));
                         }
                         if !vendor.is_empty() {
                             aliases.push(vendor.to_string());
+                            aliases.push(normalize_lower(vendor));
                         }
+                        // Extra aliases for gemini/google
                         if vendor_l == "gemini" {
                             aliases.push("google".to_string());
+                            aliases.push("Google".to_string());
                         }
                         break;
                     }
@@ -1297,6 +1333,7 @@ fn provider_aliases(app: &tauri::AppHandle, provider: &str) -> Vec<String> {
             }
         }
     }
+    
     aliases.sort();
     aliases.dedup();
     aliases
@@ -1313,7 +1350,7 @@ async fn save_api_key(
     for p in variants {
         manager.save_api_key(&p, &key).await?;
     }
-    Ok(0 == 1).map(|_| ()).or::<String>(Ok(()))
+    Ok(())
 }
 
 #[tauri::command]

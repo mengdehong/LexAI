@@ -52,6 +52,22 @@ async function resolveApiKey(provider: ProviderConfig): Promise<string> {
     console.error(`Failed to load API key for provider ${provider.id}`, error);
   }
 
+  // Fallback lookups by vendor/name to tolerate id changes and aliases
+  try {
+    const byVendor = await getApiKey(provider.vendor);
+    if (byVendor) {
+      return byVendor;
+    }
+    if (provider.vendor === "gemini") {
+      const byGoogle = await getApiKey("google");
+      if (byGoogle) return byGoogle;
+    }
+    const byName = await getApiKey(provider.name);
+    if (byName) return byName;
+  } catch (e) {
+    // ignore, fall through to env
+  }
+
   const env = import.meta.env as Record<string, string | undefined>;
   const candidates: string[] = [];
 

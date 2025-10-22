@@ -5,6 +5,7 @@ pydantic-settings>=2.6,<3
 qdrant-client>=1.15.1,<2
 langchain-text-splitters>=0.2.2,<0.3
 sentence-transformers>=3,<4
+pdfminer.six>=20221105
 fastapi>=0.115
 httpx>=0.27
 pytest>=8

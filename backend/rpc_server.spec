@@ -3,6 +3,7 @@ from PyInstaller.utils.hooks import collect_submodules, collect_dynamic_libs
 
 # Ensure PyO3 extension and its dependent DLLs are bundled (esp. on Windows)
 hidden_rust = collect_submodules('rust_core')
+hidden_pdf = collect_submodules('pdfminer')
 dynlibs_rust = collect_dynamic_libs('rust_core')
 
 a = Analysis(
@@ -10,7 +11,7 @@ a = Analysis(
     pathex=[],
     binaries=dynlibs_rust,
     datas=[],
-    hiddenimports=hidden_rust,
+    hiddenimports=hidden_rust + hidden_pdf,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

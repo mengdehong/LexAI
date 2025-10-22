@@ -7,6 +7,7 @@ import sys
 import traceback
 import uuid
 from functools import lru_cache
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict
 
 from app.bootstrap import bootstrap_env as _bootstrap_env
@@ -114,6 +115,16 @@ async def rpc_upload_document(params: Dict[str, Any]) -> Dict[str, Any]:
         raise RPCError(-32001, str(exc), {"code": exc.code}) from exc
     except Exception as exc:  # pragma: no cover - unexpected runtime failure
         raise RPCError(-32603, f"Failed to process document: {exc}") from exc
+
+    # Extra sanitization: ensure no surrogates in response (Windows issue)
+    try:
+        # This will raise if there are any surrogates left
+        extracted_text.encode("utf-8", errors="strict")
+    except UnicodeEncodeError:
+        # Filter out surrogate pairs as last resort
+        extracted_text = "".join(
+            char for char in extracted_text if not (0xD800 <= ord(char) <= 0xDFFF)
+        )
 
     return {
         "document_id": document_id,

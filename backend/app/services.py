@@ -73,6 +73,20 @@ except ImportError:  # pragma: no cover - runtime fallback for tests/CI without 
     rust_core = _RustCoreFallback()  # type: ignore
 
 
+def _extract_pdf_text_fallback(file_path: str) -> str:
+    try:
+        from pdfminer.high_level import extract_text  # type: ignore
+    except Exception as exc:  # pragma: no cover - optional fallback
+        raise RuntimeError(
+            "PDF extraction fallback unavailable (pdfminer.six not installed)"
+        ) from exc
+
+    try:
+        return extract_text(file_path) or ""
+    except Exception as exc:
+        raise RuntimeError(f"pdfminer failed to extract text: {exc}") from exc
+
+
 COLLECTION_NAME = "lexai_documents"
 
 if TYPE_CHECKING:  # pragma: no cover - typing aid only
@@ -152,12 +166,24 @@ async def process_and_embed_document(file_path: str, document_id: str) -> str:
         try:
             extracted_text = await asyncio.to_thread(rust_core.extract_text, file_path)
         except Exception as exc:  # pragma: no cover - rust_core failure surfaces at runtime
-            raise _classify_extraction_failure(exc) from exc
+            # Try pure-Python fallback (pdfminer.six) when rust_core fails (e.g., surrogate issues)
+            try:
+                extracted_text = await asyncio.to_thread(_extract_pdf_text_fallback, file_path)
+            except Exception:
+                raise _classify_extraction_failure(exc) from exc
     # Sanitize text: replace invalid surrogates to avoid UTF-8 encode errors on Windows
+    # First, encode with 'surrogateescape' to handle Windows filesystem encoding issues,
+    # then decode with 'replace' to convert any remaining problematic characters
     try:
-        text = extracted_text.encode("utf-8", errors="replace").decode("utf-8")
-    except Exception:
-        text = extracted_text
+        # Handle surrogate pairs from Windows filesystem encoding
+        text = extracted_text.encode("utf-8", errors="surrogateescape").decode("utf-8", errors="replace")
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        # Fallback: aggressive sanitization - remove all surrogates
+        try:
+            text = extracted_text.encode("utf-8", errors="replace").decode("utf-8")
+        except Exception:
+            # Last resort: filter out problematic characters
+            text = "".join(char for char in extracted_text if ord(char) < 0xD800 or ord(char) > 0xDFFF)
     text = text.strip()
 
     if not text:
