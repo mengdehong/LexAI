@@ -13,11 +13,30 @@ from typing import Any, Awaitable, Callable, Dict
 from app.bootstrap import bootstrap_env as _bootstrap_env
 _ = _bootstrap_env()  # set env & UTF-8 before any heavy imports
 
-from qdrant_client import models
-
-from app.config import get_settings
-from app import services
-from app.services import COLLECTION_NAME, DocumentProcessingError
+try:
+    sys.stderr.write("[rpc_server] Starting imports...\n")
+    sys.stderr.flush()
+    
+    from qdrant_client import models
+    sys.stderr.write("[rpc_server] Imported qdrant_client\n")
+    sys.stderr.flush()
+    
+    from app.config import get_settings
+    sys.stderr.write("[rpc_server] Imported app.config\n")
+    sys.stderr.flush()
+    
+    from app import services
+    sys.stderr.write("[rpc_server] Imported app.services\n")
+    sys.stderr.flush()
+    
+    from app.services import COLLECTION_NAME, DocumentProcessingError
+    sys.stderr.write("[rpc_server] All imports successful\n")
+    sys.stderr.flush()
+except Exception as e:
+    sys.stderr.write(f"[rpc_server] FATAL: Import failed: {e}\n")
+    sys.stderr.write(traceback.format_exc())
+    sys.stderr.flush()
+    sys.exit(1)
 
 
 JSONRPC_VERSION = "2.0"
