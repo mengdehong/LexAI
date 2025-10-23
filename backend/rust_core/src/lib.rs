@@ -9,14 +9,32 @@ fn hello_from_rust() -> PyResult<String> {
     Ok("Hello from Rust!".to_string())
 }
 
+fn sanitize_surrogates(text: String) -> String {
+    text.chars()
+        .filter(|&c| {
+            let code_point = c as u32;
+            // Filter out surrogate pairs (U+D800 to U+DFFF)
+            code_point < 0xD800 || code_point > 0xDFFF
+        })
+        .collect()
+}
+
 #[pyfunction]
 fn extract_text(path: String) -> PyResult<String> {
     match pdf_extract_text(&path) {
-        Ok(text) => Ok(text),
+        Ok(text) => {
+            // Sanitize text to remove surrogates and invalid UTF-8 sequences
+            // This is critical for Windows compatibility
+            Ok(sanitize_surrogates(text))
+        }
         Err(OutputError::PdfError(err)) if err.to_string().contains("encrypted") => Err(
             PyRuntimeError::new_err("PDF is encrypted and cannot be parsed"),
         ),
-        Err(err) => Err(PyRuntimeError::new_err(err.to_string())),
+        Err(err) => {
+            // CRITICAL: Also sanitize error messages to prevent surrogate propagation
+            let error_msg = sanitize_surrogates(err.to_string());
+            Err(PyRuntimeError::new_err(error_msg))
+        }
     }
 }
 

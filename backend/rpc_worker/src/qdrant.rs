@@ -26,8 +26,8 @@ impl EmbeddedQdrant {
                 .to_string()
         });
 
-        let url = std::env::var("QDRANT__URL")
-            .unwrap_or_else(|_| "http://127.0.0.1:6334".to_string());
+        let url =
+            std::env::var("QDRANT__URL").unwrap_or_else(|_| "http://127.0.0.1:6334".to_string());
 
         let client = Qdrant::from_url(&url)
             .timeout(std::time::Duration::from_secs(5))

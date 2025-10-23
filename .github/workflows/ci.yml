@@ -49,6 +49,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: 'backend/requirements-build.txt'
 
       - name: Prepare backend virtualenv
         shell: bash
@@ -85,6 +87,15 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: "rustfmt, clippy"
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            client/src-tauri
+            backend/rust_core
+            3rd/pdf-extract
+          cache-on-failure: true
 
       - name: Cargo fmt
         run: cargo fmt --all -- --check
@@ -185,8 +196,17 @@ jobs:
           $psi.EnvironmentVariables['PYTHONUTF8'] = '1'
           $psi.EnvironmentVariables['HF_HUB_ENABLE_HF_XET'] = '0'
           $psi.EnvironmentVariables['HF_HUB_DISABLE_TELEMETRY'] = '1'
+          $tmpCache = Join-Path $env:TEMP 'lexai-hf-cache'
+          New-Item -ItemType Directory -Force -Path $tmpCache | Out-Null
+          $psi.EnvironmentVariables['HF_HOME'] = $tmpCache
+          $psi.EnvironmentVariables['HF_HUB_CACHE'] = $tmpCache
+          $psi.EnvironmentVariables['HUGGINGFACE_HUB_CACHE'] = $tmpCache
+          $psi.EnvironmentVariables['TRANSFORMERS_CACHE'] = $tmpCache
+          $psi.EnvironmentVariables['SENTENCE_TRANSFORMERS_HOME'] = $tmpCache
+          $psi.EnvironmentVariables['HF_HUB_DISABLE_SYMLINKS'] = '1'
+          $psi.EnvironmentVariables['PYTHONUNBUFFERED'] = '1'
           $p = [System.Diagnostics.Process]::Start($psi)
-          $req = '{"jsonrpc":"2.0","id":1,"method":"health","params":{}}'
+          $req = '{"jsonrpc":"2.0","id":1,"method":"health_plus","params":{}}'
           $p.StandardInput.WriteLine($req)
           $p.StandardInput.Flush()
           $line = $p.StandardOutput.ReadLine()

@@ -270,8 +270,8 @@ body {
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis; /* keep single line */
-  max-width: 48vw;
+  text-overflow: ellipsis;
+  max-width: 220px; /* Fixed width instead of viewport-relative */
 }
 .doc-item__actions {
   margin-left: auto;

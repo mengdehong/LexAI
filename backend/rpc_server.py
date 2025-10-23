@@ -6,13 +6,37 @@ import os
 import sys
 import traceback
 import uuid
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Dict
 
-from qdrant_client import models
+from app.bootstrap import bootstrap_env as _bootstrap_env
+_ = _bootstrap_env()  # set env & UTF-8 before any heavy imports
 
-from app.config import get_settings
-from app import services
-from app.services import COLLECTION_NAME, DocumentProcessingError
+try:
+    sys.stderr.write("[rpc_server] Starting imports...\n")
+    sys.stderr.flush()
+    
+    from qdrant_client import models
+    sys.stderr.write("[rpc_server] Imported qdrant_client\n")
+    sys.stderr.flush()
+    
+    from app.config import get_settings
+    sys.stderr.write("[rpc_server] Imported app.config\n")
+    sys.stderr.flush()
+    
+    from app import services
+    sys.stderr.write("[rpc_server] Imported app.services\n")
+    sys.stderr.flush()
+    
+    from app.services import COLLECTION_NAME, DocumentProcessingError
+    sys.stderr.write("[rpc_server] All imports successful\n")
+    sys.stderr.flush()
+except Exception as e:
+    sys.stderr.write(f"[rpc_server] FATAL: Import failed: {e}\n")
+    sys.stderr.write(traceback.format_exc())
+    sys.stderr.flush()
+    sys.exit(1)
 
 
 JSONRPC_VERSION = "2.0"
@@ -24,24 +48,31 @@ class RPCError(Exception):
         self.code = code
         self.data = data
 
-
-settings = get_settings()
-EMBEDDER = services.get_embedder(settings.embedding_model_name)
-QDRANT_CLIENT = services.create_qdrant_client(settings.qdrant_host)
-
-
-def _get_shared_embedder(_: str) -> Any:
-    return EMBEDDER
+@lru_cache
+def get_settings_cached():
+    return get_settings()
 
 
-def _get_shared_qdrant(_: str) -> Any:
-    return QDRANT_CLIENT
+@lru_cache
+def get_embedder_cached():
+    s = get_settings_cached()
+    cache_dir = (
+        os.environ.get("HUGGINGFACE_HUB_CACHE")
+        or os.environ.get("HF_HUB_CACHE")
+        or os.environ.get("HF_HOME")
+        or os.environ.get("TRANSFORMERS_CACHE")
+        or os.environ.get("SENTENCE_TRANSFORMERS_HOME")
+    )
+    try:
+        return services.get_embedder(s.embedding_model_name, cache_dir=cache_dir)
+    except TypeError:
+        return services.get_embedder(s.embedding_model_name)
 
 
-services.get_embedder = services.lru_cache()(  # type: ignore[assignment]
-    lambda model_name: EMBEDDER if model_name == settings.embedding_model_name else services.get_embedder.__wrapped__(model_name)
-)
-services.create_qdrant_client = _get_shared_qdrant  # type: ignore[assignment]
+@lru_cache
+def get_qdrant_client_cached():
+    s = get_settings_cached()
+    return services.create_qdrant_client(s.qdrant_host)
 
 
 async def rpc_ping(_: Dict[str, Any]) -> Dict[str, Any]:
@@ -49,11 +80,44 @@ async def rpc_ping(_: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def rpc_health(_: Dict[str, Any]) -> Dict[str, Any]:
+    s = get_settings_cached()
     return {
         "status": "ok",
-        "embedding_model": settings.embedding_model_name,
-        "qdrant_host": settings.qdrant_host,
+        "embedding_model": s.embedding_model_name,
+        "qdrant_host": s.qdrant_host,
         "collection": COLLECTION_NAME,
+    }
+
+
+async def rpc_health_plus(_: Dict[str, Any]) -> Dict[str, Any]:
+    s = get_settings_cached()
+    # probe embedder to ensure lazy init succeeds
+    _ = get_embedder_cached()
+    cache_dir = (
+        os.environ.get("HUGGINGFACE_HUB_CACHE")
+        or os.environ.get("HF_HUB_CACHE")
+        or os.environ.get("HF_HOME")
+        or os.environ.get("TRANSFORMERS_CACHE")
+        or os.environ.get("SENTENCE_TRANSFORMERS_HOME")
+    )
+    env_snapshot = {
+        k: os.environ.get(k)
+        for k in [
+            "HF_HOME",
+            "HUGGINGFACE_HUB_CACHE",
+            "HF_HUB_CACHE",
+            "TRANSFORMERS_CACHE",
+            "SENTENCE_TRANSFORMERS_HOME",
+            "HF_HUB_DISABLE_SYMLINKS",
+            "PYTHONIOENCODING",
+            "PYTHONUTF8",
+        ]
+    }
+    return {
+        "status": "ok",
+        "embedding_model": s.embedding_model_name,
+        "hf_cache_dir": cache_dir,
+        "env": env_snapshot,
     }
 
 
@@ -63,13 +127,58 @@ async def rpc_upload_document(params: Dict[str, Any]) -> Dict[str, Any]:
         raise RPCError(-32602, "file_path is required")
 
     document_id = params.get("document_id") or str(uuid.uuid4())
+    
+    # Log the received path for debugging
+    print(f"[RPC Upload] Received file_path (repr): {repr(file_path)}", file=sys.stderr)
+    print(f"[RPC Upload] Received file_path (str): {file_path}", file=sys.stderr)
+    
+    # On Windows, fix common encoding issues in the path string itself
+    if sys.platform == "win32":
+        # Check if the path string contains mojibake or surrogates
+        try:
+            # Test if path can be encoded to UTF-8
+            file_path.encode('utf-8', errors='strict')
+        except UnicodeEncodeError as e:
+            print(f"[RPC Upload] Path contains surrogates: {e}", file=sys.stderr)
+            # Remove surrogates (U+DC80 to U+DCFF range used by Python for undecodable bytes)
+            file_path = file_path.encode('utf-8', errors='surrogateescape').decode('utf-8', errors='ignore')
+            print(f"[RPC Upload] Cleaned path: {repr(file_path)}", file=sys.stderr)
+    
+    sys.stderr.flush()
 
     try:
         extracted_text = await services.process_and_embed_document(file_path, document_id)
     except DocumentProcessingError as exc:
-        raise RPCError(-32001, str(exc), {"code": exc.code}) from exc
+        # Safely convert exception to string, handling surrogates
+        try:
+            error_msg = str(exc)
+            error_msg.encode('utf-8', errors='strict')  # Test encoding
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            error_msg = "".join(c for c in repr(exc) if ord(c) < 0xD800 or ord(c) > 0xDFFF)
+        
+        print(f"[RPC Upload] DocumentProcessingError: {error_msg}", file=sys.stderr)
+        sys.stderr.flush()
+        raise RPCError(-32001, error_msg, {"code": exc.code}) from exc
     except Exception as exc:  # pragma: no cover - unexpected runtime failure
-        raise RPCError(-32603, f"Failed to process document: {exc}") from exc
+        try:
+            error_msg = f"Failed to process document: {exc}"
+            error_msg.encode('utf-8', errors='strict')
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            error_msg = "Failed to process document: " + "".join(c for c in repr(exc) if ord(c) < 0xD800 or ord(c) > 0xDFFF)
+        
+        print(f"[RPC Upload] Unexpected error: {error_msg}", file=sys.stderr)
+        sys.stderr.flush()
+        raise RPCError(-32603, error_msg) from exc
+
+    # Extra sanitization: ensure no surrogates in response (Windows issue)
+    try:
+        # This will raise if there are any surrogates left
+        extracted_text.encode("utf-8", errors="strict")
+    except UnicodeEncodeError:
+        # Filter out surrogate pairs as last resort
+        extracted_text = "".join(
+            char for char in extracted_text if not (0xD800 <= ord(char) <= 0xDFFF)
+        )
 
     return {
         "document_id": document_id,
@@ -89,8 +198,9 @@ async def rpc_search_term_contexts(params: Dict[str, Any]) -> Dict[str, Any]:
     if not term:
         raise RPCError(-32602, "term is required")
 
+    embedder = get_embedder_cached()
     query_vector = await asyncio.to_thread(
-        EMBEDDER.encode,
+        embedder.encode,
         term,
         convert_to_numpy=True,
     )
@@ -105,8 +215,9 @@ async def rpc_search_term_contexts(params: Dict[str, Any]) -> Dict[str, Any]:
     )
 
     try:
+        client = get_qdrant_client_cached()
         hits = await asyncio.to_thread(
-            QDRANT_CLIENT.search,
+            client.search,
             collection_name=COLLECTION_NAME,
             query_vector=query_vector.tolist(),
             query_filter=query_filter,
@@ -129,6 +240,7 @@ async def rpc_search_term_contexts(params: Dict[str, Any]) -> Dict[str, Any]:
 RPC_METHODS: Dict[str, Callable[[Dict[str, Any]], Awaitable[Dict[str, Any]]]] = {
     "ping": rpc_ping,
     "health": rpc_health,
+    "health_plus": rpc_health_plus,
     "upload_document": rpc_upload_document,
     "search_term_contexts": rpc_search_term_contexts,
 }
@@ -200,13 +312,53 @@ def _configure_stdio_utf8() -> None:
         pass
 
 
+def _ensure_hf_cache_env() -> None:
+    # Default HF caches to application data to avoid Windows path/permissions issues
+    appdata = os.environ.get("APPDATA")
+    home = os.environ.get("USERPROFILE") or os.environ.get("HOME")
+    base = Path(appdata) if appdata else (Path(home) if home else Path.cwd())
+    cache_dir = base / "com.wenmou.lexai" / "hf-cache"
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        pass
+    os.environ.setdefault("HF_HOME", str(cache_dir))
+    os.environ.setdefault("HUGGINGFACE_HUB_CACHE", str(cache_dir))
+    os.environ.setdefault("TRANSFORMERS_CACHE", str(cache_dir))
+    os.environ.setdefault("SENTENCE_TRANSFORMERS_HOME", str(cache_dir))
+    # Avoid symlink-related quirks on Windows
+    os.environ.setdefault("HF_HUB_ENABLE_HF_XET", "0")
+    os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+
+
 def main() -> None:
+    # Redundant safety to ensure env is correct in long-running sessions
+    _ensure_hf_cache_env()
     _configure_stdio_utf8()
+    
+    # On Windows, ensure stdin reads UTF-8 properly and handles filesystem encoding
+    if sys.platform == "win32":
+        import io
+        # Use surrogateescape to preserve Windows filesystem encoding through stdin
+        # This allows us to properly decode paths with Chinese characters
+        sys.stdin = io.TextIOWrapper(
+            sys.stdin.buffer, 
+            encoding='utf-8', 
+            errors='surrogateescape'  # Critical: preserve filesystem encoding
+        )
+    
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
     while True:
-        line = sys.stdin.readline()
+        try:
+            line = sys.stdin.readline()
+        except UnicodeDecodeError as e:
+            # If we get a decode error, log it and try to continue
+            sys.stderr.write(f"[RPC] Unicode decode error reading stdin: {e}\n")
+            sys.stderr.flush()
+            continue
+            
         if line == "":
             break
 
