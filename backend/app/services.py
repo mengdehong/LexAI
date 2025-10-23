@@ -36,7 +36,7 @@ def _classify_extraction_failure(exc: Exception) -> DocumentProcessingError:
         # If str(exc) has surrogates, use surrogateescape to handle them
         try:
             message = str(exc).encode('utf-8', errors='surrogateescape').decode('utf-8', errors='replace')
-        except:
+        except Exception:
             # Last resort: filter out surrogates completely
             raw = repr(exc)
             message = "".join(char for char in raw if ord(char) < 0xD800 or ord(char) > 0xDFFF)
