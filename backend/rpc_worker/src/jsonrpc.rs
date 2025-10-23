@@ -187,6 +187,14 @@ impl JsonRpcLoop {
 mod tests {
     use super::*;
 
+    struct DummyEmbeddings;
+
+    impl EmbeddingEngine for DummyEmbeddings {
+        fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
+            Ok(texts.iter().map(|_| vec![0.0f32]).collect())
+        }
+    }
+
     fn response_error_code(response: &JsonRpcResponse) -> Option<i32> {
         response.error.as_ref().map(|e| e.code)
     }
@@ -197,10 +205,7 @@ mod tests {
             reader: BufReader::new(std::io::stdin()),
             ctx: RpcContext {
                 qdrant: EmbeddedQdrant::new().unwrap(),
-                embeddings: std::sync::Arc::new(
-                    EmbeddingService::new(std::sync::Arc::new(TokenizerService::new().unwrap()))
-                        .unwrap(),
-                ),
+                embeddings: std::sync::Arc::new(DummyEmbeddings),
             },
             runtime: tokio::runtime::Runtime::new().unwrap(),
         };

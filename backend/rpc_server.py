@@ -127,6 +127,24 @@ async def rpc_upload_document(params: Dict[str, Any]) -> Dict[str, Any]:
         raise RPCError(-32602, "file_path is required")
 
     document_id = params.get("document_id") or str(uuid.uuid4())
+    
+    # Log the received path for debugging
+    print(f"[RPC Upload] Received file_path (repr): {repr(file_path)}", file=sys.stderr)
+    print(f"[RPC Upload] Received file_path (str): {file_path}", file=sys.stderr)
+    
+    # On Windows, fix common encoding issues in the path string itself
+    if sys.platform == "win32":
+        # Check if the path string contains mojibake or surrogates
+        try:
+            # Test if path can be encoded to UTF-8
+            file_path.encode('utf-8', errors='strict')
+        except UnicodeEncodeError as e:
+            print(f"[RPC Upload] Path contains surrogates: {e}", file=sys.stderr)
+            # Remove surrogates (U+DC80 to U+DCFF range used by Python for undecodable bytes)
+            file_path = file_path.encode('utf-8', errors='surrogateescape').decode('utf-8', errors='ignore')
+            print(f"[RPC Upload] Cleaned path: {repr(file_path)}", file=sys.stderr)
+    
+    sys.stderr.flush()
 
     try:
         extracted_text = await services.process_and_embed_document(file_path, document_id)
@@ -137,6 +155,9 @@ async def rpc_upload_document(params: Dict[str, Any]) -> Dict[str, Any]:
             error_msg.encode('utf-8', errors='strict')  # Test encoding
         except (UnicodeEncodeError, UnicodeDecodeError):
             error_msg = "".join(c for c in repr(exc) if ord(c) < 0xD800 or ord(c) > 0xDFFF)
+        
+        print(f"[RPC Upload] DocumentProcessingError: {error_msg}", file=sys.stderr)
+        sys.stderr.flush()
         raise RPCError(-32001, error_msg, {"code": exc.code}) from exc
     except Exception as exc:  # pragma: no cover - unexpected runtime failure
         try:
@@ -144,6 +165,9 @@ async def rpc_upload_document(params: Dict[str, Any]) -> Dict[str, Any]:
             error_msg.encode('utf-8', errors='strict')
         except (UnicodeEncodeError, UnicodeDecodeError):
             error_msg = "Failed to process document: " + "".join(c for c in repr(exc) if ord(c) < 0xD800 or ord(c) > 0xDFFF)
+        
+        print(f"[RPC Upload] Unexpected error: {error_msg}", file=sys.stderr)
+        sys.stderr.flush()
         raise RPCError(-32603, error_msg) from exc
 
     # Extra sanitization: ensure no surrogates in response (Windows issue)
@@ -311,11 +335,30 @@ def main() -> None:
     # Redundant safety to ensure env is correct in long-running sessions
     _ensure_hf_cache_env()
     _configure_stdio_utf8()
+    
+    # On Windows, ensure stdin reads UTF-8 properly and handles filesystem encoding
+    if sys.platform == "win32":
+        import io
+        # Use surrogateescape to preserve Windows filesystem encoding through stdin
+        # This allows us to properly decode paths with Chinese characters
+        sys.stdin = io.TextIOWrapper(
+            sys.stdin.buffer, 
+            encoding='utf-8', 
+            errors='surrogateescape'  # Critical: preserve filesystem encoding
+        )
+    
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
     while True:
-        line = sys.stdin.readline()
+        try:
+            line = sys.stdin.readline()
+        except UnicodeDecodeError as e:
+            # If we get a decode error, log it and try to continue
+            sys.stderr.write(f"[RPC] Unicode decode error reading stdin: {e}\n")
+            sys.stderr.flush()
+            continue
+            
         if line == "":
             break
 

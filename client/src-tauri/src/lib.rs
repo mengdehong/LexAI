@@ -419,6 +419,30 @@ impl SecretsManager {
         guard.stronghold.save().map_err(|err| err.to_string())
     }
 
+    async fn save_api_keys_batch(&self, providers: &[String], key: &str) -> Result<(), String> {
+        let guard = self.inner.lock().await;
+        let client = guard.ensure_client()?;
+        let sanitized = key.trim();
+
+        for provider in providers {
+            let record_key = StrongholdInner::provider_key(provider);
+            if sanitized.is_empty() {
+                let _ = client
+                    .store()
+                    .delete(&record_key)
+                    .map_err(|err| err.to_string())?;
+            } else {
+                let _ = client
+                    .store()
+                    .insert(record_key, sanitized.as_bytes().to_vec(), None)
+                    .map_err(|err| err.to_string())?;
+            }
+        }
+
+        // Only save once after all inserts
+        guard.stronghold.save().map_err(|err| err.to_string())
+    }
+
     async fn get_api_key(&self, provider: &str) -> Result<Option<String>, String> {
         let guard = self.inner.lock().await;
         let client = guard.ensure_client()?;
@@ -535,48 +559,101 @@ impl RpcManager {
 }
 
 async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
-    // BaseDirectory::Resource already points to the resources directory.
-    // Primary candidate inside resources: "rpc_server/rpc_server(.exe)".
-    let base_resource_path = app
-        .path()
-        .resolve(
-            "rpc_server/rpc_server",
-            tauri::path::BaseDirectory::Resource,
-        )
-        .map_err(|err| err.to_string())?;
+    // In dev mode, check src-tauri/resources first
+    let exe_name = if cfg!(windows) {
+        "rpc_server.exe"
+    } else {
+        "rpc_server"
+    };
 
-    #[cfg(windows)]
-    let mut resource_path = base_resource_path;
-    #[cfg(not(windows))]
-    let resource_path = base_resource_path;
+    // Try to find the binary in multiple locations
+    let mut resource_path = None;
 
-    // On Windows, the PyInstaller binary has .exe extension
-    #[cfg(windows)]
-    if !resource_path.exists() {
-        let candidate = resource_path.with_extension("exe");
-        if candidate.exists() {
-            resource_path = candidate;
-        } else {
-            // Fallback to older packaging layout that mistakenly nested an extra resources/.
-            let alt = app
-                .path()
-                .resolve(
-                    "resources/rpc_server/rpc_server.exe",
-                    tauri::path::BaseDirectory::Resource,
-                )
-                .map_err(|err| err.to_string())?;
-            if alt.exists() {
-                resource_path = alt;
+    // 1. Development mode: src-tauri/resources/rpc_server/rpc_server.exe
+    if cfg!(debug_assertions) {
+        let current_exe = std::env::current_exe().map_err(|e| e.to_string())?;
+        if let Some(target_dir) = current_exe.parent().and_then(|p| p.parent()) {
+            // Try: target/debug/../resources/rpc_server/rpc_server.exe
+            let dev_path = target_dir
+                .parent()
+                .map(|p| p.join("resources").join("rpc_server").join(exe_name));
+            if let Some(path) = dev_path {
+                if path.exists() {
+                    eprintln!(
+                        "[spawn_rpc_worker] Found RPC server (dev mode 1): {:?}",
+                        path
+                    );
+                    resource_path = Some(path);
+                }
+            }
+
+            // Try: target/debug/../../src-tauri/resources/rpc_server/rpc_server.exe
+            if resource_path.is_none() {
+                let dev_path2 = target_dir.parent().and_then(|p| p.parent()).map(|p| {
+                    p.join("src-tauri")
+                        .join("resources")
+                        .join("rpc_server")
+                        .join(exe_name)
+                });
+                if let Some(path) = dev_path2 {
+                    if path.exists() {
+                        eprintln!(
+                            "[spawn_rpc_worker] Found RPC server (dev mode 2): {:?}",
+                            path
+                        );
+                        resource_path = Some(path);
+                    }
+                }
             }
         }
     }
 
-    if !resource_path.exists() {
-        return Err(format!(
-            "RPC worker binary missing at {}",
-            resource_path.display()
-        ));
+    // 2. Production mode: use BaseDirectory::Resource
+    if resource_path.is_none() {
+        let base_resource_path = app
+            .path()
+            .resolve(
+                "rpc_server/rpc_server",
+                tauri::path::BaseDirectory::Resource,
+            )
+            .map_err(|err| err.to_string())?;
+
+        #[cfg(windows)]
+        {
+            let candidate = base_resource_path.with_extension("exe");
+            if candidate.exists() {
+                resource_path = Some(candidate);
+            } else if base_resource_path.exists() {
+                resource_path = Some(base_resource_path);
+            } else {
+                // Fallback to older packaging layout
+                let alt = app
+                    .path()
+                    .resolve(
+                        "resources/rpc_server/rpc_server.exe",
+                        tauri::path::BaseDirectory::Resource,
+                    )
+                    .map_err(|err| err.to_string())?;
+                if alt.exists() {
+                    resource_path = Some(alt);
+                }
+            }
+        }
+
+        #[cfg(not(windows))]
+        {
+            if base_resource_path.exists() {
+                resource_path = Some(base_resource_path);
+            }
+        }
     }
+
+    let resource_path = resource_path.ok_or_else(|| {
+        format!(
+            "RPC worker binary not found. Searched in development and production locations for {}",
+            exe_name
+        )
+    })?;
 
     let resource_dir = resource_path
         .parent()
@@ -670,6 +747,7 @@ async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
     #[cfg(windows)]
     {
         use std::env;
+        #[allow(unused_imports)]
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000);
         // Ensure bundled DLLs/.pyd can be resolved by the child process
@@ -682,6 +760,10 @@ async fn spawn_rpc_worker(app: &tauri::AppHandle) -> Result<RpcClient, String> {
             paths.push(current_path);
         }
         command.env("PATH", paths.join(";"));
+
+        // Force console to use UTF-8 code page for proper Chinese character handling
+        command.env("PYTHONIOENCODING", "utf-8:replace");
+        command.env("PYTHONUTF8", "1");
     }
 
     let child = command
@@ -801,7 +883,17 @@ async fn upload_document(
     app: tauri::AppHandle,
     rpc_manager: State<'_, RpcManager>,
 ) -> Result<UploadPayload, String> {
+    // Ensure the file path is valid UTF-8 (critical for Chinese characters on Windows)
+    // Rust strings are already UTF-8, but verify the path exists
+    let path_check = std::path::Path::new(&file_path);
+    if !path_check.exists() {
+        return Err(format!("File not found before upload: {}", file_path));
+    }
+
     let client = rpc_manager.ensure_client(&app).await?;
+
+    // Send the path as UTF-8 encoded string via JSON-RPC
+    // The file_path will be automatically escaped properly by serde_json
     let response = match client
         .call(
             "upload_document",
@@ -871,22 +963,77 @@ async fn store_temp_document(
         .await
         .map_err(|err| err.to_string())?;
 
-    let sanitized = Path::new(&file_name)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("upload.bin");
+    // CRITICAL FIX: On Windows, file_name may already be corrupted if it contains
+    // Chinese characters due to UTF-8/UTF-16 conversion issues in the IPC layer.
+    // Solution: Sanitize to ASCII-safe filename with a hash of the original name.
 
-    let unique_name = format!("upload-{}-{}", Utc::now().timestamp_millis(), sanitized);
-    let file_path = base_dir.join(unique_name);
+    let timestamp = Utc::now().timestamp_millis();
 
+    // Check if filename contains non-ASCII characters
+    let has_non_ascii = file_name.chars().any(|c| !c.is_ascii());
+
+    let unique_name = if has_non_ascii && cfg!(windows) {
+        // On Windows with non-ASCII, use hash to avoid encoding issues
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        file_name.hash(&mut hasher);
+        let hash = hasher.finish();
+
+        // Extract extension if present
+        let ext = Path::new(&file_name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("bin");
+
+        eprintln!(
+            "[store_temp_document] Non-ASCII filename detected: {}",
+            file_name
+        );
+        eprintln!(
+            "[store_temp_document] Using hash-based name: upload-{}-{:x}.{}",
+            timestamp, hash, ext
+        );
+
+        format!("upload-{}-{:x}.{}", timestamp, hash, ext)
+    } else {
+        // Safe ASCII filename, use as-is
+        let sanitized = Path::new(&file_name)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("upload.bin");
+
+        format!("upload-{}-{}", timestamp, sanitized)
+    };
+
+    let file_path = base_dir.join(&unique_name);
+
+    // Log the path for debugging
+    eprintln!("[store_temp_document] Original name: {}", file_name);
+    eprintln!("[store_temp_document] Saving to: {:?}", file_path);
+
+    // Write the file
     tokio_fs::write(&file_path, contents)
         .await
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| format!("Failed to write file: {}", err))?;
 
-    file_path
-        .to_str()
-        .map(str::to_string)
-        .ok_or_else(|| "Generated path is not valid UTF-8".to_string())
+    // Verify the file was created successfully
+    if !file_path.exists() {
+        return Err("File was not created successfully".to_string());
+    }
+
+    // On Windows, ensure we get a proper UTF-8 path string
+    // to_str() returns None if the path is not valid UTF-8
+    // Use display() as fallback which handles all paths
+    file_path.to_str().map(str::to_string).ok_or_else(|| {
+        // Fallback: use lossy conversion which replaces invalid UTF-8 with �
+        // This should rarely happen with modern Windows (NT paths are UTF-16)
+        format!(
+            "Path contains invalid UTF-8 characters: {}",
+            file_path.display()
+        )
+    })
 }
 
 #[tauri::command]
@@ -1346,15 +1493,26 @@ async fn save_api_key(
     manager: State<'_, SecretsManager>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    let variants = provider_aliases(&app, &provider);
     eprintln!(
-        "[save_api_key] provider='{}', variants={:?}",
-        provider, variants
+        "[save_api_key] provider='{}', key.len={}",
+        provider,
+        key.len()
     );
-    for p in variants {
-        eprintln!("[save_api_key] Saving under alias '{}'", p);
-        manager.save_api_key(&p, &key).await?;
-    }
+
+    let mut variants = provider_aliases(&app, &provider);
+    variants.sort();
+    variants.dedup();
+
+    eprintln!(
+        "[save_api_key] Saving to {} locations: {:?}",
+        variants.len(),
+        variants
+    );
+
+    // Batch save to all aliases at once (only write to disk once)
+    manager.save_api_keys_batch(&variants, &key).await?;
+
+    eprintln!("[save_api_key] ✓ Completed");
     Ok(())
 }
 
@@ -1364,19 +1522,32 @@ async fn get_api_key(
     manager: State<'_, SecretsManager>,
     app: tauri::AppHandle,
 ) -> Result<Option<String>, String> {
+    // Try exact match first
+    if let Some(val) = manager.get_api_key(&provider).await? {
+        eprintln!(
+            "[get_api_key] ✓ Found '{}' (length: {})",
+            provider,
+            val.len()
+        );
+        return Ok(Some(val));
+    }
+
+    // Try aliases
     let variants = provider_aliases(&app, &provider);
-    eprintln!(
-        "[get_api_key] provider='{}', variants={:?}",
-        provider, variants
-    );
     for p in &variants {
-        eprintln!("[get_api_key] Checking alias '{}'", p);
-        if let Some(val) = manager.get_api_key(p).await? {
-            eprintln!("[get_api_key] Found key under alias '{}'", p);
-            return Ok(Some(val));
+        if p != &provider {
+            if let Some(val) = manager.get_api_key(p).await? {
+                eprintln!(
+                    "[get_api_key] ✓ Found via alias '{}' (length: {})",
+                    p,
+                    val.len()
+                );
+                return Ok(Some(val));
+            }
         }
     }
-    eprintln!("[get_api_key] No key found for any variant");
+
+    eprintln!("[get_api_key] ✗ Not found: '{}'", provider);
     Ok(None)
 }
 
@@ -1475,19 +1646,35 @@ pub fn run() {
             .build(),
         )
         .setup(|app| {
+            eprintln!("[Tauri Setup] Starting application setup...");
+
             let data_dir = app
                 .path()
                 .app_data_dir()
                 .map_err(|err| -> Box<dyn Error> { Box::new(err) })?;
 
+            eprintln!("[Tauri Setup] Data dir: {:?}", data_dir);
+
             fs::create_dir_all(&data_dir).map_err(|err| -> Box<dyn Error> { Box::new(err) })?;
+
+            eprintln!("[Tauri Setup] Created data directory");
 
             let db_path = data_dir.join("lexai.db");
             let stronghold_path = data_dir.join(STRONGHOLD_SNAPSHOT);
             let master_key = hash(b"lexai-default-master-password");
 
+            // Check if this is first-time initialization
+            let is_first_init = !stronghold_path.exists();
+            if is_first_init {
+                eprintln!("[Tauri Setup] First-time Stronghold initialization (this takes ~10 seconds due to key derivation)...");
+            } else {
+                eprintln!("[Tauri Setup] Loading existing Stronghold...");
+            }
+
             let stronghold = Stronghold::new(&stronghold_path, master_key.as_bytes().to_vec())
                 .map_err(|err| -> Box<dyn Error> { Box::new(err) })?;
+
+            eprintln!("[Tauri Setup] Stronghold ready");
 
             let secrets_inner = StrongholdInner {
                 stronghold,

@@ -3,7 +3,7 @@ import App from "./App";
 import { AppStateProvider } from "./state/AppState";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <AppStateProvider>
-    <App />
-  </AppStateProvider>
+    <AppStateProvider>
+        <App />
+    </AppStateProvider>
 );

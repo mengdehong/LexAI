@@ -1,38 +1,38 @@
 {
-  "$schema": "https://schema.tauri.app/config/2",
-  "productName": "LexAI",
-  "version": "0.2.5",
-  "identifier": "com.wenmou.lexai",
-  "build": {
-    "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
-    "frontendDist": "../dist"
-  },
-  "app": {
-    "windows": [
-      {
-        "title": "LexAI",
-        "width": 800,
-        "height": 600
-      }
-    ],
-    "security": {
-      "csp": "default-src 'self'; script-src 'self'; connect-src 'self' https: http: tauri://localhost; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:;"
+    "$schema": "https://schema.tauri.app/config/2",
+    "productName": "LexAI",
+    "version": "0.2.5",
+    "identifier": "com.wenmou.lexai",
+    "build": {
+        "beforeDevCommand": "npm run dev",
+        "devUrl": "http://localhost:1420",
+        "beforeBuildCommand": "npm run build",
+        "frontendDist": "../dist"
+    },
+    "app": {
+        "windows": [
+            {
+                "title": "LexAI",
+                "width": 800,
+                "height": 600
+            }
+        ],
+        "security": {
+            "csp": "default-src 'self'; script-src 'self'; connect-src 'self' https: http: tauri://localhost; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:;"
+        }
+    },
+    "bundle": {
+        "active": true,
+        "targets": "all",
+        "resources": [
+            "resources"
+        ],
+        "icon": [
+            "icons/32x32.png",
+            "icons/128x128.png",
+            "icons/128x128@2x.png",
+            "icons/icon.icns",
+            "icons/icon.ico"
+        ]
     }
-  },
-  "bundle": {
-    "active": true,
-    "targets": "all",
-    "resources": [
-      "resources"
-    ],
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns",
-      "icons/icon.ico"
-    ]
-  }
 }

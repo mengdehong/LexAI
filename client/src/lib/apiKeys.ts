@@ -1,49 +1,54 @@
 import { invoke } from "@tauri-apps/api/core";
 
-function isTauriRuntime(): boolean {
-  return typeof window !== "undefined" && "__TAURI__" in window;
-}
-
 export async function saveApiKey(providerId: string, key: string): Promise<void> {
-  if (!isTauriRuntime()) {
-    return;
-  }
+    const trimmed = key.trim();
+    if (trimmed.length === 0) {
+        console.warn("[saveApiKey] Attempted to save empty API key, skipping");
+        return;
+    }
 
-  try {
-    await invoke("save_api_key", { provider: providerId, key });
-  } catch (error) {
-    console.error("Failed to save API key", error);
-    throw error;
-  }
+    try {
+        console.log(`[saveApiKey] Saving API key for provider: ${providerId} (length: ${trimmed.length})`);
+        await invoke("save_api_key", { provider: providerId, key: trimmed });
+        console.log(`[saveApiKey] ✓ Successfully saved API key for provider: ${providerId}`);
+    } catch (error) {
+        console.error(`[saveApiKey] ✗ Failed to save API key for provider '${providerId}':`, error);
+        throw new Error(`Failed to save API key: ${error instanceof Error ? error.message : String(error)}`);
+    }
 }
 
 export async function getApiKey(providerId: string): Promise<string | null> {
-  if (!isTauriRuntime()) {
-    return null;
-  }
+    try {
+        console.log(`[getApiKey] Reading API key for provider: ${providerId}`);
+        const value = await invoke<string | null>("get_api_key", { provider: providerId });
 
-  try {
-    const value = await invoke<string | null>("get_api_key", { provider: providerId });
-    if (typeof value === "string") {
-      const trimmed = value.trim();
-      return trimmed.length > 0 ? trimmed : null;
+        if (value === null || value === undefined) {
+            console.log(`[getApiKey] No API key found for provider: ${providerId}`);
+            return null;
+        }
+
+        if (typeof value === "string") {
+            const trimmed = value.trim();
+            const hasKey = trimmed.length > 0;
+            console.log(`[getApiKey] ${hasKey ? '✓' : '✗'} API key for provider: ${providerId} (length: ${trimmed.length})`);
+            return hasKey ? trimmed : null;
+        }
+
+        console.warn(`[getApiKey] Unexpected value type for provider '${providerId}':`, typeof value);
+        return null;
+    } catch (error) {
+        console.error(`[getApiKey] ✗ Failed to read API key for provider '${providerId}':`, error);
+        throw new Error(`Failed to read API key: ${error instanceof Error ? error.message : String(error)}`);
     }
-    return null;
-  } catch (error) {
-    console.error("Failed to read API key", error);
-    throw error;
-  }
 }
 
 export async function hasApiKey(providerId: string): Promise<boolean> {
-  if (!isTauriRuntime()) {
-    return false;
-  }
-
-  try {
-    return await invoke<boolean>("has_api_key", { provider: providerId });
-  } catch (error) {
-    console.error("Failed to check API key status", error);
-    throw error;
-  }
+    try {
+        const result = await invoke<boolean>("has_api_key", { provider: providerId });
+        console.log(`[hasApiKey] Provider '${providerId}' has key: ${result}`);
+        return result;
+    } catch (error) {
+        console.error(`[hasApiKey] ✗ Failed to check API key status for provider '${providerId}':`, error);
+        throw new Error(`Failed to check API key: ${error instanceof Error ? error.message : String(error)}`);
+    }
 }
