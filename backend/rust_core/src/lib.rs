@@ -26,7 +26,7 @@ fn extract_text(path: String) -> PyResult<String> {
             // Sanitize text to remove surrogates and invalid UTF-8 sequences
             // This is critical for Windows compatibility
             Ok(sanitize_surrogates(text))
-        },
+        }
         Err(OutputError::PdfError(err)) if err.to_string().contains("encrypted") => Err(
             PyRuntimeError::new_err("PDF is encrypted and cannot be parsed"),
         ),
@@ -34,7 +34,7 @@ fn extract_text(path: String) -> PyResult<String> {
             // CRITICAL: Also sanitize error messages to prevent surrogate propagation
             let error_msg = sanitize_surrogates(err.to_string());
             Err(PyRuntimeError::new_err(error_msg))
-        },
+        }
     }
 }
 

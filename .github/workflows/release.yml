@@ -164,12 +164,16 @@ jobs:
         shell: bash
         working-directory: backend/rust_core
         run: |
+          # Force clean build to ensure latest changes are compiled
+          cargo clean
           "$VENV_PYTHON" -m maturin develop --release
 
       - name: Build RPC worker
         shell: bash
         working-directory: backend
         run: |
+          # Clean PyInstaller cache to ensure rust_core is fresh
+          rm -rf build dist
           "$VENV_PYTHON" build.py
 
       - name: Sync RPC worker resources

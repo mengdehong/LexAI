@@ -1347,7 +1347,10 @@ async fn save_api_key(
     app: tauri::AppHandle,
 ) -> Result<(), String> {
     let variants = provider_aliases(&app, &provider);
-    eprintln!("[save_api_key] provider='{}', variants={:?}", provider, variants);
+    eprintln!(
+        "[save_api_key] provider='{}', variants={:?}",
+        provider, variants
+    );
     for p in variants {
         eprintln!("[save_api_key] Saving under alias '{}'", p);
         manager.save_api_key(&p, &key).await?;
@@ -1362,7 +1365,10 @@ async fn get_api_key(
     app: tauri::AppHandle,
 ) -> Result<Option<String>, String> {
     let variants = provider_aliases(&app, &provider);
-    eprintln!("[get_api_key] provider='{}', variants={:?}", provider, variants);
+    eprintln!(
+        "[get_api_key] provider='{}', variants={:?}",
+        provider, variants
+    );
     for p in &variants {
         eprintln!("[get_api_key] Checking alias '{}'", p);
         if let Some(val) = manager.get_api_key(p).await? {
