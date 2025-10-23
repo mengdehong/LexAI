@@ -112,9 +112,20 @@ async def rpc_upload_document(params: Dict[str, Any]) -> Dict[str, Any]:
     try:
         extracted_text = await services.process_and_embed_document(file_path, document_id)
     except DocumentProcessingError as exc:
-        raise RPCError(-32001, str(exc), {"code": exc.code}) from exc
+        # Safely convert exception to string, handling surrogates
+        try:
+            error_msg = str(exc)
+            error_msg.encode('utf-8', errors='strict')  # Test encoding
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            error_msg = "".join(c for c in repr(exc) if ord(c) < 0xD800 or ord(c) > 0xDFFF)
+        raise RPCError(-32001, error_msg, {"code": exc.code}) from exc
     except Exception as exc:  # pragma: no cover - unexpected runtime failure
-        raise RPCError(-32603, f"Failed to process document: {exc}") from exc
+        try:
+            error_msg = f"Failed to process document: {exc}"
+            error_msg.encode('utf-8', errors='strict')
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            error_msg = "Failed to process document: " + "".join(c for c in repr(exc) if ord(c) < 0xD800 or ord(c) > 0xDFFF)
+        raise RPCError(-32603, error_msg) from exc
 
     # Extra sanitization: ensure no surrogates in response (Windows issue)
     try:

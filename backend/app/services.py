@@ -26,12 +26,20 @@ class DocumentProcessingError(Exception):
 
 def _classify_extraction_failure(exc: Exception) -> DocumentProcessingError:
     # Safely convert exception to string, handling potential surrogates
+    # Use repr() first as it's safer, then clean surrogates
     try:
         message = str(exc)
-    except UnicodeEncodeError:
-        # If str(exc) fails due to surrogates, manually clean it
-        message = "".join(char for char in repr(exc) if ord(char) < 0xD800 or ord(char) > 0xDFFF)
-    lowered = message.lower()
+        # Test if the message can be encoded to UTF-8
+        message.encode('utf-8', errors='strict')
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        # If str(exc) has surrogates, use repr and filter
+        raw = repr(exc)
+        message = "".join(char for char in raw if ord(char) < 0xD800 or ord(char) > 0xDFFF)
+    
+    try:
+        lowered = message.lower()
+    except:
+        lowered = ""
 
     if "encrypted" in lowered:
         return DocumentProcessingError(
