@@ -12,7 +12,20 @@ fn hello_from_rust() -> PyResult<String> {
 #[pyfunction]
 fn extract_text(path: String) -> PyResult<String> {
     match pdf_extract_text(&path) {
-        Ok(text) => Ok(text),
+        Ok(text) => {
+            // Sanitize text to remove surrogates and invalid UTF-8 sequences
+            // This is critical for Windows compatibility
+            let sanitized = text
+                .chars()
+                .filter(|&c| {
+                    let code_point = c as u32;
+                    // Filter out surrogate pairs (U+D800 to U+DFFF)
+                    // and other problematic characters
+                    code_point < 0xD800 || code_point > 0xDFFF
+                })
+                .collect::<String>();
+            Ok(sanitized)
+        },
         Err(OutputError::PdfError(err)) if err.to_string().contains("encrypted") => Err(
             PyRuntimeError::new_err("PDF is encrypted and cannot be parsed"),
         ),
