@@ -5,8 +5,9 @@ import type {
     ModelMapping,
     ProviderConfig,
     ProviderVendor,
+    ThemeMode,
 } from "../lib/configStore";
-import { loadConfig, saveModelMapping, saveProviders, setDefinitionLanguage } from "../lib/configStore";
+import { loadConfig, saveModelMapping, saveProviders, setDefinitionLanguage, setThemeMode } from "../lib/configStore";
 import { DiagnosticsPanel } from "./DiagnosticsPanel";
 import { hasApiKey, saveApiKey } from "../lib/apiKeys";
 import { useLocale } from "../state/LocaleContext";
@@ -43,6 +44,12 @@ const LANGUAGE_LABELS: Record<DefinitionLanguage, string> = {
     "zh-CN": "简体中文",
 };
 
+const THEME_MODE_LABELS: Record<ThemeMode, { en: string; zh: string }> = {
+    light: { en: "Light", zh: "白天模式" },
+    dark: { en: "Dark", zh: "黑夜模式" },
+    auto: { en: "Auto", zh: "自动" },
+};
+
 const MAPPING_OPERATIONS: MappingOperation[] = ["termExtraction", "explanation", "onboarding", "deepDive"];
 
 function createProviderId(): string {
@@ -54,12 +61,14 @@ function createProviderId(): string {
 
 type SettingsViewProps = {
     onLanguageChange?: (language: DefinitionLanguage) => void;
+    onThemeModeChange?: (themeMode: ThemeMode) => void;
 };
 
-export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
+export function SettingsView({ onLanguageChange, onThemeModeChange }: SettingsViewProps = {}) {
     const [providers, setProviders] = useState<ProviderConfig[]>([]);
     const [modelMapping, setModelMapping] = useState<ModelMapping>({});
     const [language, setLanguage] = useState<DefinitionLanguage>("en");
+    const [themeMode, setThemeModeState] = useState<ThemeMode>("auto");
     const uiLanguage = useLocale();
     const isChinese = uiLanguage === "zh-CN";
     const [providerForm, setProviderForm] = useState<ProviderFormState>(INITIAL_PROVIDER_FORM);
@@ -67,6 +76,7 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
     const [savingProvider, setSavingProvider] = useState(false);
     const [savingMapping, setSavingMapping] = useState<MappingOperation | null>(null);
     const [savingLanguage, setSavingLanguage] = useState(false);
+    const [savingTheme, setSavingTheme] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [info, setInfo] = useState<string | null>(null);
     const [testingProviderId, setTestingProviderId] = useState<string | null>(null);
@@ -135,6 +145,7 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
                 }
                 setModelMapping(config.modelMapping);
                 setLanguage(config.preferences.definitionLanguage);
+                setThemeModeState(config.preferences.themeMode || "auto");
 
                 setModelDrafts({
                     termExtraction: config.modelMapping.termExtraction?.model ?? "",
@@ -498,6 +509,36 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
         [],
     );
 
+    const themeModeOptions = useMemo(
+        () =>
+            (Object.keys(THEME_MODE_LABELS) as ThemeMode[]).map((value) => (
+                <option key={value} value={value}>
+                    {isChinese ? THEME_MODE_LABELS[value].zh : THEME_MODE_LABELS[value].en}
+                </option>
+            )),
+        [isChinese],
+    );
+
+    const handleThemeModeChange = useCallback(
+        async (value: ThemeMode) => {
+            setSavingTheme(true);
+            setError(null);
+            setInfo(null);
+            try {
+                await setThemeMode(value);
+                setThemeModeState(value);
+                setInfo(isChinese ? "偏好设置已保存。" : "Preference saved.");
+                onThemeModeChange?.(value);
+            } catch (err) {
+                const detail = err instanceof Error ? err.message : String(err);
+                setError(detail);
+            } finally {
+                setSavingTheme(false);
+            }
+        },
+        [isChinese, onThemeModeChange],
+    );
+
     if (loading) {
         return (
             <section className="panel">
@@ -786,6 +827,16 @@ export function SettingsView({ onLanguageChange }: SettingsViewProps = {}) {
                             disabled={savingLanguage}
                         >
                             {languageOptions}
+                        </select>
+                    </label>
+                    <label>
+                        {isChinese ? "主题模式" : "Theme mode"}
+                        <select
+                            value={themeMode}
+                            onChange={(event) => handleThemeModeChange(event.target.value as ThemeMode)}
+                            disabled={savingTheme}
+                        >
+                            {themeModeOptions}
                         </select>
                     </label>
                 </div>
