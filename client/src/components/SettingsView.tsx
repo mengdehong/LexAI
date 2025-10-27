@@ -11,6 +11,8 @@ import { loadConfig, saveModelMapping, saveProviders, setDefinitionLanguage, set
 import { DiagnosticsPanel } from "./DiagnosticsPanel";
 import { hasApiKey, saveApiKey } from "../lib/apiKeys";
 import { useLocale } from "../state/LocaleContext";
+import { Input } from "./ui/input";
+import { Select } from "./ui/select";
 
 type ProviderFormState = {
     id: string | null;
@@ -580,7 +582,7 @@ export function SettingsView({ onLanguageChange, onThemeModeChange }: SettingsVi
                     <div className="provider-form__row">
                         <label>
                             {isChinese ? "名称" : "Name"}
-                            <input
+                            <Input
                                 type="text"
                                 value={providerForm.name}
                                 onChange={(event) => handleProviderInputChange("name", event.target.value)}
@@ -589,20 +591,20 @@ export function SettingsView({ onLanguageChange, onThemeModeChange }: SettingsVi
                         </label>
                         <label>
                             {isChinese ? "厂商" : "Vendor"}
-                            <select
+                            <Select
                                 value={providerForm.vendor}
                                 onChange={(event) => handleProviderInputChange("vendor", event.target.value as ProviderVendor)}
                             >
                                 <option value="openai">{isChinese ? "OpenAI 兼容" : "OpenAI Compatible"}</option>
                                 <option value="gemini">{isChinese ? "Google Gemini" : "Google Gemini"}</option>
                                 <option value="custom">{isChinese ? "自定义" : "Custom"}</option>
-                            </select>
+                            </Select>
                         </label>
                     </div>
                     <div className="provider-form__row">
                         <label>
                             {isChinese ? "默认模型" : "Default Model"}
-                            <input
+                            <Input
                                 type="text"
                                 value={providerForm.defaultModel}
                                 onChange={(event) => handleProviderInputChange("defaultModel", event.target.value)}
@@ -611,7 +613,7 @@ export function SettingsView({ onLanguageChange, onThemeModeChange }: SettingsVi
                         </label>
                         <label>
                             {isChinese ? "Base URL（可选）" : "Base URL (optional)"}
-                            <input
+                            <Input
                                 type="url"
                                 placeholder="https://api.example.com/v1"
                                 value={providerForm.baseUrl}
@@ -624,7 +626,7 @@ export function SettingsView({ onLanguageChange, onThemeModeChange }: SettingsVi
                             {isChinese
                                 ? "API Key（可选，将安全存储）"
                                 : "API Key (optional, stored securely)"}
-                            <input
+                            <Input
                                 type="password"
                                 value={providerForm.apiKey}
                                 onChange={(event) => handleProviderInputChange("apiKey", event.target.value)}
@@ -787,18 +789,18 @@ export function SettingsView({ onLanguageChange, onThemeModeChange }: SettingsVi
                                 <div className="mapping-entry__controls">
                                     <label>
                                         {isChinese ? "Provider" : "Provider"}
-                                        <select
+                                        <Select
                                             value={current?.providerId ?? ""}
                                             onChange={(event) => handleMappingProviderChange(operation, event.target.value)}
                                             disabled={providers.length === 0 || savingMapping === operation}
                                         >
                                             <option value="">{isChinese ? "未配置" : "Not assigned"}</option>
                                             {availableProviderOptions}
-                                        </select>
+                                        </Select>
                                     </label>
                                     <label>
                                         {isChinese ? "模型" : "Model"}
-                                        <input
+                                        <Input
                                             type="text"
                                             value={modelDrafts[operation] ?? ""}
                                             onChange={(event) => handleModelInputChange(operation, event.target.value)}
@@ -821,23 +823,23 @@ export function SettingsView({ onLanguageChange, onThemeModeChange }: SettingsVi
                 <div className="preferences-form">
                     <label>
                         {isChinese ? "术语释义语言" : "Definition language"}
-                        <select
+                        <Select
                             value={language}
                             onChange={(event) => handleLanguageChange(event.target.value as DefinitionLanguage)}
                             disabled={savingLanguage}
                         >
                             {languageOptions}
-                        </select>
+                        </Select>
                     </label>
                     <label>
                         {isChinese ? "主题模式" : "Theme mode"}
-                        <select
+                        <Select
                             value={themeMode}
                             onChange={(event) => handleThemeModeChange(event.target.value as ThemeMode)}
                             disabled={savingTheme}
                         >
                             {themeModeOptions}
-                        </select>
+                        </Select>
                     </label>
                 </div>
                 <div className="settings-diagnostics">
