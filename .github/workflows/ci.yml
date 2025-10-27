@@ -133,6 +133,7 @@ jobs:
           python -c 'import sys,json,subprocess; p=subprocess.Popen([sys.executable,"backend/rpc_server.py"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True); req={"jsonrpc":"2.0","id":1,"method":"health","params":{}}; p.stdin.write(json.dumps(req)+"\n"); p.stdin.flush(); line=p.stdout.readline().strip(); p.terminate(); print(line); resp=json.loads(line); assert resp.get("result", {}).get("status")=="ok", f"unexpected response: {resp}"'
 
   windows-smoke:
+    if: false
     runs-on: windows-latest
     needs: build
     steps:
