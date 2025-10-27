@@ -38,6 +38,125 @@
   --blur-strong: 28px;
 }
 
+/* explicit light mode overrides */
+.light-mode {
+  color: #0f172a;
+  background-color: #f8fafc;
+}
+.light-mode body {
+  background: radial-gradient(1200px 800px at 20% -10%, #ffffff 0%, #f5f7fb 35%, #eef2ff 100%);
+}
+
+/* explicit dark mode overrides via class */
+.dark-mode {
+  color: #e2e8f0;
+  background-color: #0c1118;
+}
+.dark-mode body {
+  background: linear-gradient(180deg, #0c1118 0%, #0e141b 100%);
+}
+
+.dark-mode .panel {
+  background: rgba(30, 41, 59, 0.86);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(var(--blur-strong));
+}
+
+.dark-mode .panel__list-item {
+  background: rgba(59, 130, 246, 0.25);
+}
+.dark-mode .panel__list-item.active {
+  background: rgba(147, 197, 253, 0.35);
+}
+
+.dark-mode .reading-panel__text {
+  background: rgba(15, 23, 42, 0.7);
+  border-color: rgba(59, 130, 246, 0.4);
+  color: #e2e8f0;
+}
+
+.dark-mode .reading-panel__explanation,
+.dark-mode .onboarding-form input,
+.dark-mode .onboarding-form textarea,
+.dark-mode .onboarding-form select,
+.dark-mode .provider-form__row input,
+.dark-mode .provider-form__row select,
+.dark-mode .mapping-entry__controls input,
+.dark-mode .mapping-entry__controls select,
+.dark-mode .preferences-form select,
+.dark-mode .term-table__input,
+.dark-mode .term-table__textarea,
+.dark-mode .settings-diagnostics-toggle {
+  background: var(--surface);
+  color: #e2e8f0;
+  border-color: var(--border);
+}
+
+.dark-mode .onboarding-secondary:hover {
+  background: rgba(10, 132, 255, 0.14);
+}
+
+.dark-mode .term-table th {
+  background: rgba(59, 130, 246, 0.35);
+}
+
+.dark-mode .term-table td {
+  border-color: rgba(148, 163, 184, 0.3);
+}
+
+/* Ensure native form controls render in dark theme */
+.dark-mode input,
+.dark-mode select,
+.dark-mode textarea {
+  background: var(--surface);
+  color: #e2e8f0;
+  border-color: var(--border);
+  color-scheme: dark;
+}
+
+.dark-mode *::-webkit-scrollbar { height: 10px; width: 10px; }
+.dark-mode *::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+}
+.dark-mode *::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.5); }
+
+/* Token overrides so class-based themes fully work regardless of system setting */
+:root.dark-mode {
+  color: #e2e8f0;
+  background-color: #0c1118;
+  --surface: rgba(20, 27, 36, 0.92);
+  --surface-alt: rgba(28, 38, 51, 0.82);
+  --border: rgba(148, 163, 184, 0.22);
+  --text-muted: #cbd5e1;
+  --primary: #0A84FF;
+  --primary-strong: #006FEA;
+  --primary-soft: rgba(10, 132, 255, 0.18);
+}
+:root.light-mode {
+  color: #0f172a;
+  background-color: #f8fafc;
+  --surface: rgba(255, 255, 255, 0.94);
+  --surface-alt: rgba(238, 242, 255, 0.85);
+  --border: #cbd5f5;
+  --text-muted: #475569;
+  --primary: #0A84FF;
+  --primary-strong: #006FEA;
+  --primary-soft: #DBEAFE;
+}
+
+/* Mac header explicit theme overrides */
+.dark-mode .mac-header {
+  background: linear-gradient(180deg, rgba(15,23,42,0.72), rgba(15,23,42,0.58));
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  color: #e2e8f0;
+}
+.light-mode .mac-header {
+  background: linear-gradient(180deg, rgba(255,255,255,0.78), rgba(255,255,255,0.62));
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+  color: #0f172a;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -1473,3 +1592,44 @@ button:disabled {
     color: #e2e8f0; /* light text on dark translucent background */
   }
 }
+
+/* Force selects and dropdown list to honor dark theme visuals (class-based) */
+.dark-mode .provider-form__row select,
+.dark-mode .mapping-entry__controls select,
+.dark-mode .preferences-form select,
+.dark-mode select {
+  background: var(--surface) !important;
+  color: #e2e8f0 !important;
+  border-color: var(--border) !important;
+  appearance: none;
+  -webkit-appearance: none;
+  color-scheme: dark;
+}
+.dark-mode option,
+.dark-mode optgroup {
+  background-color: #111827;
+  color: #e5e7eb;
+}
+
+/* Ensure light mode resets UA form control theme when system prefers dark */
+.light-mode input,
+.light-mode select,
+.light-mode textarea {
+  color-scheme: light;
+  background: #f8fafc;
+  color: #0f172a;
+  border-color: var(--border);
+}
+
+/* Global color-scheme for native UI controls */
+:root.dark-mode, .dark-mode { color-scheme: dark; }
+:root.light-mode, .light-mode { color-scheme: light; }
+
+/* Review card contrast in dark mode */
+.dark-mode .review-card {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+}
+.dark-mode .review-card__term { color: #e2e8f0; }
+.dark-mode .review-card__definition { color: #cbd5e1; }

@@ -10,11 +10,12 @@ import { GlobalTermbaseView } from "./components/GlobalTermbaseView";
 import { SettingsView } from "./components/SettingsView";
 import { OnboardingView } from "./components/OnboardingView";
 import { ReviewCenter } from "./components/ReviewCenter";
-import { loadConfig, type DefinitionLanguage } from "./lib/configStore";
+import { loadConfig, type DefinitionLanguage, type ThemeMode } from "./lib/configStore";
 import { useAppState } from "./state/AppState";
 import { loadSessionState, saveSessionState, type SessionState, type SessionView } from "./lib/sessionStore";
 import { LocaleProvider } from "./state/LocaleContext";
 import "./App.css";
+import { Button } from "./components/ui/button";
 // legacy button kept for compatibility in other files if needed
 
 type ReviewTerm = {
@@ -47,6 +48,7 @@ function App() {
   const [configReady, setConfigReady] = useState(false);
   const [configError, setConfigError] = useState<string | null>(null);
   const [definitionLanguage, setDefinitionLanguage] = useState<DefinitionLanguage>("en");
+  const [themeMode, setThemeMode] = useState<ThemeMode>("auto");
   const [hasOnboardingMapping, setHasOnboardingMapping] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
   const [enforceOnboarding, setEnforceOnboarding] = useState(true);
@@ -207,6 +209,7 @@ function App() {
     try {
       const config = await loadConfig();
       setDefinitionLanguage(config.preferences.definitionLanguage);
+      setThemeMode(config.preferences.themeMode || "auto");
       setHasOnboardingMapping(Boolean(config.modelMapping.onboarding));
       setOnboardingComplete(config.onboardingComplete);
       setConfigError(null);
@@ -222,6 +225,44 @@ function App() {
   useEffect(() => {
     refreshConfig();
   }, [refreshConfig]);
+
+  // 应用主题模式
+  useEffect(() => {
+    const root = document.documentElement;
+
+    const clearClasses = () => {
+      root.classList.remove("dark-mode");
+      root.classList.remove("light-mode");
+    };
+
+    if (themeMode === "dark") {
+      clearClasses();
+      root.classList.add("dark-mode");
+      return;
+    }
+
+    if (themeMode === "light") {
+      clearClasses();
+      root.classList.add("light-mode");
+      return;
+    }
+
+    // auto: 跟随系统
+    clearClasses();
+    const darkModeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const applySystemTheme = (e: MediaQueryList | MediaQueryListEvent) => {
+      if ("matches" in e ? e.matches : (e as MediaQueryList).matches) {
+        root.classList.add("dark-mode");
+      } else {
+        root.classList.remove("dark-mode");
+      }
+    };
+
+    applySystemTheme(darkModeQuery);
+    darkModeQuery.addEventListener("change", applySystemTheme);
+
+    return () => darkModeQuery.removeEventListener("change", applySystemTheme);
+  }, [themeMode]);
 
   useEffect(() => {
     if (previousView.current === "settings" && activeView !== "settings") {
@@ -297,18 +338,18 @@ function App() {
           </div>
           <div className="topbar__actions">
             <nav className="topbar__nav" aria-label="Primary">
-              <button className={`topbar__button ${activeView === 'workspace' ? 'active' : ''}`} onClick={() => setActiveView('workspace')} disabled={showOnboarding || generatorOpen}>
+              <Button variant={activeView === 'workspace' ? 'active' : 'default'} onClick={() => setActiveView('workspace')} disabled={showOnboarding || generatorOpen}>
                 {definitionLanguage === 'zh-CN' ? '工作区' : 'Workspace'}
-              </button>
-              <button className={`topbar__button ${activeView === 'global' ? 'active' : ''}`} onClick={() => setActiveView('global')} disabled={showOnboarding || generatorOpen}>
+              </Button>
+              <Button variant={activeView === 'global' ? 'active' : 'default'} onClick={() => setActiveView('global')} disabled={showOnboarding || generatorOpen}>
                 {definitionLanguage === 'zh-CN' ? '全局库' : 'Global'}
-              </button>
-              <button className={`topbar__button ${activeView === 'review' ? 'active' : ''}`} onClick={() => setActiveView('review')} disabled={showOnboarding || generatorOpen}>
+              </Button>
+              <Button variant={activeView === 'review' ? 'active' : 'default'} onClick={() => setActiveView('review')} disabled={showOnboarding || generatorOpen}>
                 {reviewButtonText}
-              </button>
-              <button className={`topbar__button ${activeView === 'settings' ? 'active' : ''}`} onClick={() => setActiveView('settings')} disabled={showOnboarding || generatorOpen}>
+              </Button>
+              <Button variant={activeView === 'settings' ? 'active' : 'default'} onClick={() => setActiveView('settings')} disabled={showOnboarding || generatorOpen}>
                 {definitionLanguage === 'zh-CN' ? '设置' : 'Settings'}
-              </button>
+              </Button>
             </nav>
             {/* Diagnostics entry moved into Settings */}
             <button className="topbar__cta" onClick={() => setGeneratorOpen(true)} disabled={showOnboarding || generatorOpen}>
@@ -341,7 +382,10 @@ function App() {
                 <ReviewCenter onReviewCountChange={setReviewDueCount} />
               )}
               {activeView === "settings" && (
-                <SettingsView onLanguageChange={handleLanguagePreferenceChange} />
+                <SettingsView 
+                  onLanguageChange={handleLanguagePreferenceChange}
+                  onThemeModeChange={setThemeMode}
+                />
               )}
             </>
           )}

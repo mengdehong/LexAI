@@ -2,6 +2,8 @@ import { LazyStore } from "@tauri-apps/plugin-store";
 
 export type DefinitionLanguage = "en" | "zh-CN";
 
+export type ThemeMode = "light" | "dark" | "auto";
+
 export type ProviderVendor = "openai" | "gemini" | "custom";
 
 export type ProviderConfig = {
@@ -28,6 +30,7 @@ export type ModelMapping = {
 
 export type Preferences = {
     definitionLanguage: DefinitionLanguage;
+    themeMode: ThemeMode;
 };
 
 export type LexAIConfig = {
@@ -46,6 +49,7 @@ const DEFAULT_CONFIG: LexAIConfig = {
     modelMapping: {},
     preferences: {
         definitionLanguage: "en",
+        themeMode: "auto",
     },
     onboardingComplete: false,
 };
@@ -186,6 +190,11 @@ export async function setDefinitionLanguage(language: DefinitionLanguage): Promi
     const normalized = normalizeDefinitionLanguage(language);
     const current = await readValue<Preferences>("preferences", DEFAULT_CONFIG.preferences);
     await savePreferences({ ...current, definitionLanguage: normalized });
+}
+
+export async function setThemeMode(themeMode: ThemeMode): Promise<void> {
+    const current = await readValue<Preferences>("preferences", DEFAULT_CONFIG.preferences);
+    await savePreferences({ ...current, themeMode });
 }
 
 export async function markOnboardingComplete(): Promise<void> {

@@ -970,7 +970,7 @@ async fn store_temp_document(
     let timestamp = Utc::now().timestamp_millis();
 
     // Check if filename contains non-ASCII characters
-    let has_non_ascii = file_name.chars().any(|c| !c.is_ascii());
+    let has_non_ascii = !file_name.is_ascii();
 
     let unique_name = if has_non_ascii && cfg!(windows) {
         // On Windows with non-ASCII, use hash to avoid encoding issues
